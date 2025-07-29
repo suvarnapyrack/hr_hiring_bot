@@ -8,10 +8,8 @@ load_dotenv()
 llm = ChatGroq(model="mixtral-8x7b-32768", api_key=os.getenv("GROQ_API_KEY"))
 
 def parse_resume(state):
-    resume_file = state["resume"]
-    with pdfplumber.open(resume_file) as pdf:
-        text = ''.join(page.extract_text() for page in pdf.pages if page.extract_text())
-    return {**state, "resume_text": text}
+    resume_text = state["resume"]  # already a string, not a file
+    return {**state, "resume_text": resume_text}
 
 def compute_similarity(state):
     prompt = PromptTemplate.from_template("""
