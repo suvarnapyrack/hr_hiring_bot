@@ -1,0 +1,28 @@
+# streamlit 
+# langchain 
+# langgraph 
+# groq
+# pdfplumber
+# pandas 
+# sentence-transformers 
+# python-dotenv
+# langchain_groq
+
+
+streamlit
+langchain
+langgraph
+groq
+langchain_groq
+pdfplumber
+pandas
+sentence-transformers
+python-dotenv
+email-validator
+requests
+beautifulsoup4
+tqdm
+pydantic
+scikit-learn
+PyMuPDF
+openpyxl

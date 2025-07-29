@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  hr_hiring_bot:
+    build: .
+    container_name: hr_hiring_bot_container
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: always
