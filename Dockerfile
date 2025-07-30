@@ -7,6 +7,7 @@ COPY . .
 RUN apt-get update && apt-get install -y build-essential poppler-utils
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir --timeout=120 -r requirements.txt
 
 EXPOSE 8501
 
