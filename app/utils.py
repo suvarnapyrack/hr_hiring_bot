@@ -6,57 +6,18 @@ import pdfplumber
 import imaplib
 import email
 from datetime import datetime, timedelta
-
 from langchain_openai import OpenAIEmbeddings
-
-
-
-
+from dotenv import load_dotenv
+from sklearn.metrics.pairwise import cosine_similarity
+import json
 from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
-
 # Load environment variables
 load_dotenv()
 llm = ChatGroq(model="llama3-8b-8192", api_key=os.getenv("GROQ_API_KEY"))
 
-
-# -------------------- Gmail Resume Fetch Function -------------------- #
-# def fetch_resumes_from_gmail(user_email, app_password, download_dir="../resumes"):
-#     os.makedirs(download_dir, exist_ok=True)
-#     mail = imaplib.IMAP4_SSL("imap.gmail.com")
-#     mail.login(user_email, app_password)
-#     mail.select("inbox")
-#     date_since = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
-#     result, data = mail.search(None, f'(SINCE {date_since})')
-#     email_ids = data[0].split()
-
-#     downloaded = []
-#     for eid in email_ids:
-#         status, msg_data = mail.fetch(eid, "(RFC822)")
-#         if status != "OK": continue
-#         msg = email.message_from_bytes(msg_data[0][1])
-#         subject = msg["subject"] or ""
-#         sender = email.utils.parseaddr(msg.get("From"))[1]
-
-#         if not any(kw in subject.lower() for kw in ["resume", "job", "application"]):
-#             continue
-
-#         for part in msg.walk():
-#             if part.get("Content-Disposition") and "attachment" in part.get("Content-Disposition"):
-#                 filename = part.get_filename()
-#                 if filename and filename.lower().endswith(".pdf"):
-#                     filepath = os.path.join(download_dir, filename)
-#                     with open(filepath, "wb") as f:
-#                         f.write(part.get_payload(decode=True))
-#                     downloaded.append({
-#                         "filepath": filepath,
-#                         "sender_email": sender
-#                     })
-
-#     mail.logout()
-#     return downloaded
 
 
 
@@ -65,7 +26,7 @@ def fetch_resumes_from_gmail(user_email, app_password, download_dir="../resumes"
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(user_email, app_password)
     mail.select("inbox")
-    date_since = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
+    date_since = (datetime.now() - timedelta(days=3)).strftime("%d-%b-%Y")
     result, data = mail.search(None, f'(SINCE {date_since})')
     email_ids = data[0].split()
 
@@ -90,7 +51,7 @@ def fetch_resumes_from_gmail(user_email, app_password, download_dir="../resumes"
                         "filepath": filepath,
                         "sender_email": sender_email
                     })
-    mail.logout()
+    # mail.logout()
     return downloaded
 
 
@@ -114,9 +75,7 @@ def parse_resume(state):
     raw_text = state["resume"]
     cleaned_text = clean_text(raw_text)  # only if needed separately
     return {**state, "resume_text": cleaned_text}
-    # return {**state, "resume_text": state["resume"]}
-# from langchain.embeddings import OpenAIEmbeddings
-from sklearn.metrics.pairwise import cosine_similarity
+  
 
 def embedding_similarity(jd, resume):
     embed = OpenAIEmbeddings()
@@ -182,7 +141,7 @@ def classify_resume(state):
 
 
 
-import json
+
 
 def analyze_skills_education_experience(state):
     prompt = PromptTemplate.from_template("""
@@ -253,12 +212,43 @@ def save_feedback(resume_id, feedback):
 
 
 
-import smtplib
+# import smtplib
+# from email.mime.text import MIMEText
+
+# def send_feedback_email(to_email, feedback_text):
+#     from_email = os.getenv("GMAIL_USER")
+#     app_password = os.getenv("GMAIL_PASS")  # App password, not regular one!
+
+#     print(from_email)
+#     print(app_password)
+
+#     subject = "Feedback on Your Resume Submission"
+#     body = f"Dear Candidate,\n\nThank you for your application.\nFeedback: {feedback_text}\n\nBest regards,\nHR Bot"
+
+#     msg = MIMEText(body)
+#     msg["Subject"] = subject
+#     msg["From"] = from_email
+#     msg["To"] = to_email
+
+#     try:
+#         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+#             server.login(from_email, app_password)
+#             server.sendmail(from_email, to_email, msg.as_string())
+#             print("✅ Email sent to", msg)
+#     except Exception as e:
+#         print("❌ Failed to send email:", str(e))
+# At the top of your Streamlit file (NOT inside the function!)
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
+import streamlit as st
 from email.mime.text import MIMEText
+import smtplib
 
 def send_feedback_email(to_email, feedback_text):
     from_email = os.getenv("GMAIL_USER")
-    app_password = os.getenv("GMAIL_PASS")  # App password, not regular one!
+    app_password = os.getenv("GMAIL_PASS")
 
     subject = "Feedback on Your Resume Submission"
     body = f"Dear Candidate,\n\nThank you for your application.\nFeedback: {feedback_text}\n\nBest regards,\nHR Bot"
@@ -268,10 +258,31 @@ def send_feedback_email(to_email, feedback_text):
     msg["From"] = from_email
     msg["To"] = to_email
 
+    print("From:", from_email)
+    print("To:", to_email)
+    print("Password exists:", bool(app_password))
+    print("Message Body:\n", msg.as_string())
+
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(from_email, app_password)
             server.sendmail(from_email, to_email, msg.as_string())
         print("✅ Email sent to", to_email)
+
+        # Optional logging
+        with open("email_log.txt", "a") as f:
+            f.write(f"Sent to {to_email} with feedback '{feedback_text}'\n")
+
     except Exception as e:
         print("❌ Failed to send email:", str(e))
+        st.error(f"❌ Email send failed: {str(e)}")
+
+
+
+
+
+
+
+
+
+
