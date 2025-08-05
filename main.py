@@ -46,29 +46,7 @@ load_dotenv()
 from app.utils import extract_text_from_pdf
 from app.langgraph_flow import graph  # Make sure graph is defined and imported
 
-# def process_resumes(resume_items, jd_text):
-#     all_results = []
-
-#     for i, item in enumerate(resume_items):
-#         path = item["filepath"]
-#         sender = item.get("sender_email", "Unknown")
-#         resume_text = extract_text_from_pdf(path)
-
-#         state = {
-#             "jd_text": jd_text,
-#             "resume_path": path,
-#             "resume": resume_text,
-#             "resume_id": f"resume_{i}",
-#             "sender_email": sender
-#         }
-
-#         result = graph.invoke(state)
-#         result["sender_email"] = sender
-#         all_results.append(result)
-
-#     return all_results
 from app.utils import score_resume
-
 def process_resumes(resume_items, jd_text):
     all_results = []
 
@@ -77,22 +55,22 @@ def process_resumes(resume_items, jd_text):
         sender = item.get("sender_email", "Unknown")
         resume_text = extract_text_from_pdf(path)
 
-        # ✅ FIXED: Use "resume" key instead of "resume_text"
         state = {
             "jd_text": jd_text,
-            "resume": resume_text,           # <-- this is the important fix
+            "resume": resume_text,
+            "resume_text": resume_text,  # ✅ ADD this line for ranking
             "resume_path": path,
             "resume_id": f"resume_{i}",
             "sender_email": sender
         }
 
-        # Step 1: Run LangGraph (LLM pipeline)
+        # Step 1: Run LangGraph
         state = graph.invoke(state)
 
-        # Step 2: Apply scoring (based on skills, similarity, experience)
+        # Step 2: Apply scoring
         state = score_resume(state)
 
-        # Step 3: Skip resumes with less experience than required
+        # Step 3: Skip resumes with low experience
         if state.get("experience_filtered"):
             continue
 
@@ -100,20 +78,46 @@ def process_resumes(resume_items, jd_text):
         name = state.get("name", f"Candidate {i+1}")
         email = state.get("email", sender)
         score = state.get("score", 0)
-        feedback = "Accept" if score >= 5 else "Reject"
+        feedback = "Accept" if score >= 6 else "Reject"
 
+        # ✅ Append all required fields
         all_results.append({
             "name": name,
             "email": email,
             "score": score,
             "feedback": feedback,
-            "resume_path": path
+            "resume_path": path,
+            "resume_text": resume_text,     # ✅ needed for ranking
+            "resume_id": f"resume_{i}",     # ✅ optional, used in utils
         })
 
     return all_results
 
 
+import os
+import re
+import streamlit as st
+from app.utils import extract_text_from_pdf, fetch_resumes_from_gmail, rank_top_candidates
 
+# ✅ Display Ranked Candidates
+def display_ranked_candidates(processed_resumes):
+    top_candidates = rank_top_candidates(processed_resumes)
+
+    if not top_candidates:
+        st.warning("⚠️ No suitable candidates found with score > 0.")
+        return
+
+    st.subheader("🏆 Top Ranked Candidates")
+
+    for candidate in top_candidates:
+        st.markdown(f"""
+        ### 🥇 Rank {candidate['rank']}: {candidate['name']}
+        - **Email:** {candidate['email']}
+        - **Score:** `{candidate['score']}`
+        """)
+
+
+# ✅ Main App
 def run_streamlit():
     st.set_page_config(page_title="HR Hiring Bot", layout="centered")
     st.title("🤖 HR Hiring Bot")
@@ -125,10 +129,12 @@ def run_streamlit():
         st.warning("Please enter a job description to proceed.")
         return
 
+    # 📩 Gmail Fetch Mode
     if menu_option == "📩 Gmail Fetch":
         if st.button("📥 Fetch from Gmail"):
             user = os.getenv("GMAIL_USER")
             password = os.getenv("GMAIL_PASS")
+
             if not user or not password:
                 st.error("❌ Gmail credentials not found in .env")
             else:
@@ -138,8 +144,7 @@ def run_streamlit():
                 results = process_resumes(resume_items, jd_text)
                 st.success("✅ Resume processing completed!")
 
-                # ✅ SHOW results on UI
-                st.subheader("📊 Candidate Scores & Details")
+                st.subheader("📊 Candidate Scores & Feedback")
                 for i, res in enumerate(results, 1):
                     with st.expander(f"📌 Candidate {i}: {res['name']}"):
                         st.markdown(f"- **Email:** {res['email']}")
@@ -147,7 +152,11 @@ def run_streamlit():
                         st.markdown(f"- **Feedback:** `{res['feedback']}`")
                         st.markdown(f"- **Resume:** [Open Resume]({res['resume_path']})")
 
+                # Show ranked top candidates
+                display_ranked_candidates(results)  # Pass already scored resumes
 
+
+    # 📁 Upload Folder Mode
     elif menu_option == "📁 Upload Folder":
         uploaded_files = st.file_uploader("Upload multiple PDF resumes", type="pdf", accept_multiple_files=True)
         if st.button("📤 Process Uploaded PDFs") and uploaded_files:
@@ -160,8 +169,20 @@ def run_streamlit():
                 resume_items.append({"filepath": path, "sender_email": "N/A"})
 
             results = process_resumes(resume_items, jd_text)
-            #feedback_output = collect_feedback_and_send(results)
+            st.success("✅ Resume processing completed!")
 
+            st.subheader("📊 Candidate Scores & Feedback")
+            for i, res in enumerate(results, 1):
+                with st.expander(f"📌 Candidate {i}: {res['name']}"):
+                    st.markdown(f"- **Email:** {res['email']}")
+                    st.markdown(f"- **Score:** `{res['score']}`")
+                    st.markdown(f"- **Feedback:** `{res['feedback']}`")
+                    st.markdown(f"- **Resume:** [Open Resume]({res['resume_path']})")
+
+            # Show top ranked
+            display_ranked_candidates(jd_text, resume_items)
+
+    # 🧠 Manual Upload
     elif menu_option == "🧠 Manual Upload":
         resume_file = st.file_uploader("📎 Upload Resume (PDF Only)", type="pdf")
         if st.button("🧠 Run Screening") and resume_file:
@@ -169,25 +190,19 @@ def run_streamlit():
             os.makedirs("manual_uploaded", exist_ok=True)
             with open(path, "wb") as out:
                 out.write(resume_file.read())
+
             resume_text = extract_text_from_pdf(path)
             state = {"jd_text": jd_text, "resume": resume_text}
+            from app.graph import graph  # Assuming LangGraph is used
             result = graph.invoke(state)
+
             st.success("✅ Resume Processed")
-            st.write("📌 Job Type:", result.get("job_type"))
-            
-            st.write("🏆 Final Score:", result.get("score"))
+            st.markdown(f"📌 **Job Type:** `{result.get('job_type')}`")
+            st.markdown(f"🏆 **Final Score:** `{result.get('score')}`")
 
-
-
-
-
-
-
-
-
-
-
-
+# ✅ Run the app
+if __name__ == "__main__":
+    run_streamlit()
 
 
 import streamlit as st
@@ -204,7 +219,6 @@ from email.mime.text import MIMEText
 import smtplib
 
 
-##################
 import re
 
 
@@ -349,5 +363,5 @@ def extract_email(raw_email):
 
 
 
-if __name__ == "__main__":
-    run_streamlit()
+# if __name__ == "__main__":
+#     run_streamlit()

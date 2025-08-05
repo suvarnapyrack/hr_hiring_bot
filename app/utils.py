@@ -14,9 +14,11 @@ from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
+from langchain_openai import OpenAIEmbeddings
+
 # Load environment variables
 load_dotenv()
-llm = ChatGroq(model="llama3-8b-8192", api_key=os.getenv("GROQ_API_KEY"))
+llm = ChatGroq(model="llama3-70b-8192", api_key=os.getenv("GROQ_API_KEY"))
 
 
 
@@ -26,7 +28,7 @@ def fetch_resumes_from_gmail(user_email, app_password, download_dir="../resumes"
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
     mail.login(user_email, app_password)
     mail.select("inbox")
-    date_since = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
+    date_since = (datetime.now() - timedelta(days=2)).strftime("%d-%b-%Y")
     result, data = mail.search(None, f'(SINCE {date_since})')
     email_ids = data[0].split()
 
@@ -77,6 +79,21 @@ def parse_resume(state):
     return {**state, "resume_text": cleaned_text}
   
 
+
+# import re
+# import json
+# from sklearn.metrics.pairwise import cosine_similarity
+# from langchain.prompts import PromptTemplate
+# from langchain.embeddings import OpenAIEmbeddings
+
+# # Add this check before doing anything
+# def is_valid_resume(text):
+#     if len(text.strip().split()) < 50:
+#         return False
+#     keywords = ['education', 'experience', 'skills', 'project', 'certification']
+#     return any(kw in text.lower() for kw in keywords)
+
+# # ------------------ Embedding Similarity ------------------
 # def embedding_similarity(jd, resume):
 #     embed = OpenAIEmbeddings()
 #     jd_vec = embed.embed_query(jd)
@@ -84,10 +101,19 @@ def parse_resume(state):
 #     score = cosine_similarity([jd_vec], [res_vec])[0][0]
 #     return round(score * 10, 2)  # Normalize to 0–10 scale
 
+# # ------------------ Compute Similarity ------------------
 # def compute_similarity(state):
 #     jd = state["jd_text"]
 #     resume = state["resume_text"]
-    
+
+#     if not is_valid_resume(resume):
+#         return {
+#             **state,
+#             "llm_score": 0,
+#             "embedding_score": 0,
+#             "similarity_score": 0
+#         }
+
 #     # 1. LLM-based similarity
 #     prompt = PromptTemplate.from_template("""
 #     Given the job description: {jd}
@@ -104,10 +130,10 @@ def parse_resume(state):
 #     try:
 #         embed_score = embedding_similarity(jd, resume)
 #     except Exception as e:
-#         embed_score = 0  # fallback if API fails
+#         embed_score = 0
 
-#     # 3. Combine both scores (you can adjust the weights)
-#     combined_score = round(0.5 * llm_score + 0.5 * embed_score, 2)
+#     # 3. Combined score (reduced weight for embedding)
+#     combined_score = round(0.4 * llm_score + 0.4 * embed_score, 2)
 
 #     return {
 #         **state,
@@ -116,9 +142,11 @@ def parse_resume(state):
 #         "similarity_score": combined_score
 #     }
 
+# # ------------------ Resume Classification ------------------
 # def classify_resume(state):
 #     prompt = PromptTemplate.from_template("""
-#     Classify the following resume into one job category (choose one):
+#     Classify the resume below into **only one** job category from this list, based on how well it matches the provided job description:
+
 #     - AI Engineer
 #     - Data Analyst
 #     - Machine Learning Engineer
@@ -128,25 +156,33 @@ def parse_resume(state):
 #     - Frontend Developer
 #     - Full Stack Developer
 #     - DevOps Engineer
+#     - Hr Executive
+#     -Hr intern 
+#     -bussiness development intern
+#     -bussiness Analyst
+#     -bussiness analyst intern
+                                          
+
+#     Job Description:
+#     {jd}
 
 #     Resume:
 #     {resume}
 
-#     Just return the category name.
+#     Only return one of the above job categories exactly as-is. No explanation.
 #     """)
 #     chain = prompt | llm
-#     response = chain.invoke({"resume": state["resume_text"]})
-#     return {**state, "job_type": response.content.strip()}
+#     response = chain.invoke({"jd": state["jd_text"], "resume": state["resume_text"]})
+    
+#     job_type = response.content.strip()
+#     return {**state, "job_type": job_type}
 
 
-
-
-
-
+# # ------------------ Extract Skills, Education, Experience ------------------
 # def analyze_skills_education_experience(state):
 #     prompt = PromptTemplate.from_template("""
 #     From the following resume text, extract:
-#     - Top 5 relevant skills
+#     - Top 10 relevant skills
 #     - Education level
 #     - Years of experience
 
@@ -169,73 +205,335 @@ def parse_resume(state):
 #     return {**state, "analysis": analysis_dict}
 
 
+# import re
 
+# # ✅ Threshold for relevance — adjust based on your use case
+# MIN_SIMILARITY_THRESHOLD = 0.5  # 0 to 1 scale
+
+# # ✅ Extract required experience from job description
+# def extract_required_experience(jd_text):
+#     match = re.search(r"(\d+)[+\s]*years? of experience", jd_text.lower())
+#     return int(match.group(1)) if match else None
+
+# # ✅ Main scoring function
 # def score_resume(state):
 #     similarity = state.get("similarity_score", 0)
 #     analysis = state.get("analysis", {})
-    
+
+#     # ✅ Step 1: Filter out irrelevant resumes
+#     if similarity < MIN_SIMILARITY_THRESHOLD:
+#         return {**state, "score": 0, "experience_filtered": False}
+
+#     # ✅ Step 2: Extract experience from resume
 #     exp_str = analysis.get("experience", "0")
 #     match = re.search(r"[\d.]+", exp_str)
 #     exp_years = float(match.group()) if match else 0.0
 
-#     skills_count = len(analysis.get("skills", []))
-    
-#     score = (0.6 * similarity) + (0.2 * min(exp_years, 10)) + (0.2 * min(skills_count, 10))
-#     return {**state, "score": round(score, 2)}
+#     # ✅ Step 3: Extract required experience from JD
+#     required_exp = extract_required_experience(state["jd_text"])
+#     if required_exp is not None and exp_years < required_exp:
+#         return {**state, "score": 0, "experience_filtered": True, "ai_irrelevant": False}
+
+#     # ✅ Step 4: Count skills
+#     skills = analysis.get("skills", [])
+#     skills_count = len(skills)
+
+#     # ✅ Step 5: Normalize scores (all between 0 and 1)
+#     normalized_similarity = min(similarity, 1.0)
+#     normalized_exp = min(exp_years / 10.0, 1.0)
+#     normalized_skills = min(skills_count / 10.0, 1.0)
+
+#     # ✅ Step 6: Weighted score calculation (final score 0–10)
+#     weighted_score = (0.8* normalized_similarity) + \
+#                      (0.1 * normalized_exp) + \
+#                      (0.1* normalized_skills)
+
+#     final_score = min(weighted_score * 10.0, 10.0)
+
+#     return {
+#         **state,
+#         "score": round(final_score, 2),
+#         "experience_filtered": False
+       
+#     }
+
+
+
+# def save_feedback(resume_id, feedback):
+#     with open("feedback.json", "a") as f:
+#         f.write(json.dumps({"resume_id": resume_id, "feedback": feedback}) + "\n")
+
+
+
+
+
+
+# import re
+# import json
+# from sklearn.metrics.pairwise import cosine_similarity
+# from langchain.prompts import PromptTemplate
+# from langchain.embeddings import OpenAIEmbeddings
+
+# # ✅ 1. Check if Resume is Valid
+# def is_valid_resume(text):
+#     if len(text.strip().split()) < 50:
+#         return False
+#     # Avoid hardcoding exact keywords — use broader check
+#     common_sections = ['education', 'experience', 'skills', 'project', 'certification']
+#     return any(section in text.lower() for section in common_sections)
+
+# # ✅ 2. Embedding Similarity
+# def embedding_similarity(jd, resume):
+#     embed = OpenAIEmbeddings()
+#     jd_vec = embed.embed_query(jd)
+#     res_vec = embed.embed_query(resume)
+#     score = cosine_similarity([jd_vec], [res_vec])[0][0]
+#     return round(score * 10, 2)  # Normalize to 0–10 scale
+
+# # ✅ 3. Compute Similarity (LLM + Embedding)
+# def compute_similarity(state):
+#     jd = state.get("jd_text", "")
+#     resume = state.get("resume_text", "")
+
+#     if not is_valid_resume(resume):
+#         return {
+#             **state,
+#             "llm_score": 0,
+#             "embedding_score": 0,
+#             "similarity_score": 0
+#         }
+
+#     # 🧠 LLM-based similarity score
+#     prompt = PromptTemplate.from_template("""
+#     Given the following job description and resume, rate how well the resume matches the job description on a scale of 0 to 10.
+
+#     Job Description:
+#     {jd}
+
+#     Resume:
+#     {resume}
+
+#     Return ONLY a number (0 to 10).
+#     """)
+#     chain = prompt | llm
+#     response = chain.invoke({"jd": jd, "resume": resume})
+
+#     # Safely extract numeric score
+#     match = re.search(r"\b([0-9]{1,2})\b", response.content)
+#     llm_score = int(match.group(1)) if match else 0
+
+#     # 🤖 Embedding-based similarity
+#     try:
+#         embed_score = embedding_similarity(jd, resume)
+#     except Exception as e:
+#         embed_score = 0  # Fail-safe
+
+#     # 🎯 Final similarity score
+#     combined_score = round((0.4 * llm_score) + (0.4 * embed_score), 2)
+
+#     return {
+#         **state,
+#         "llm_score": llm_score,
+#         "embedding_score": embed_score,
+#         "similarity_score": combined_score
+#     }
+
+# # ✅ 4. Classify Resume Role (LLM)
+# def classify_resume(state):
+#     prompt = PromptTemplate.from_template("""
+#     Based on the job description and resume provided below, classify the resume into **only one** of the following roles:
+
+#     - AI Engineer
+#     - Data Analyst
+#     - Machine Learning Engineer
+#     - Data Annotator
+#     - UI/UX Designer
+#     - Backend Developer
+#     - Frontend Developer
+#     - Full Stack Developer
+#     - DevOps Engineer
+#     - HR Executive
+#     - HR Intern
+#     - Business Development Intern
+#     - Business Analyst
+#     - Business Analyst Intern
+
+#     Job Description:
+#     {jd}
+
+#     Resume:
+#     {resume}
+
+#     Return only one role name from the above list. No explanation.
+#     """)
+#     chain = prompt | llm
+#     response = chain.invoke({"jd": state["jd_text"], "resume": state["resume_text"]})
+#     return {**state, "job_type": response.content.strip()}
+
+# # ✅ 5. Extract Skills, Education, Experience (LLM)
+# def analyze_skills_education_experience(state):
+#     prompt = PromptTemplate.from_template("""
+#     From the following resume text, extract the following fields:
+
+#     - skills: Top 10 relevant skills (as a list)
+#     - education: Highest level of education (e.g., B.Tech in Computer Science)
+#     - experience: Total years of professional experience (number or string like "fresher")
+
+#     Resume:
+#     {resume}
+
+#     Return a valid JSON with keys: skills, education, experience
+#     """)
+#     chain = prompt | llm
+#     response = chain.invoke({"resume": state["resume_text"]})
+
+#     try:
+#         analysis_dict = json.loads(response.content)
+#     except json.JSONDecodeError:
+#         analysis_dict = {
+#             "skills": [],
+#             "education": "Unknown",
+#             "experience": "0"
+#         }
+
+#     return {**state, "analysis": analysis_dict}
+
+
+
+
+# import re
+# import json
+
+# MIN_SIMILARITY_THRESHOLD = 0.5  # Adjust based on testing
+
+# # ✅ Extract required years of experience from JD
+# def extract_required_experience(jd_text):
+#     match = re.search(r"(\d+)[+\s]*years? of experience", jd_text.lower())
+#     return int(match.group(1)) if match else 0
+
+# # ✅ Detect if resume mentions "fresher" or <1 year experience
+# def is_fresher(exp_str):
+#     exp_str = exp_str.lower().strip()
+#     if "fresher" in exp_str:
+#         return True
+#     match = re.search(r"[\d.]+", exp_str)
+#     exp_years = float(match.group()) if match else 0.0
+#     return exp_years < 1.0
+
+# # ✅ Main Scoring Function
+# def score_resume(state):
+#     similarity = state.get("similarity_score", 0.0)
+#     analysis = state.get("analysis", {})
+#     jd_text = state.get("jd_text", "")
+
+#     # Step 1: Skip irrelevant resumes
+#     if similarity < MIN_SIMILARITY_THRESHOLD:
+#         return {**state, "score": 0, "experience_filtered": False, "ai_irrelevant": True}
+
+#     # Step 2: Experience
+#     exp_str = analysis.get("experience", "0")
+#     fresher = is_fresher(exp_str)
+#     match = re.search(r"[\d.]+", exp_str)
+#     exp_years = float(match.group()) if match else 0.0
+
+#     # Step 3: Required experience from JD
+#     required_exp = extract_required_experience(jd_text)
+#     if not fresher and required_exp > 0 and exp_years < required_exp:
+#         return {**state, "score": 0, "experience_filtered": True, "ai_irrelevant": False}
+
+#     # Step 4: Skills
+#     skills = analysis.get("skills", [])
+#     skills_count = len(skills)
+
+#     # Step 5: Normalize
+#     normalized_similarity = min(similarity, 1.0)
+#     normalized_exp = 0.0 if fresher else min(exp_years / 10.0, 1.0)
+#     normalized_skills = min(skills_count / 10.0, 1.0)
+
+#     # Step 6: Weighted score (adjust based on your priority)
+#     weighted_score = (0.7 * normalized_similarity) + \
+#                      (0.15 * normalized_exp) + \
+#                      (0.15 * normalized_skills)
+
+#     final_score = min(weighted_score * 10.0, 10.0)
+
+#     return {
+#         **state,
+#         "score": round(final_score, 2),
+#         "experience_filtered": False,
+#         "ai_irrelevant": False,
+#         "fresher": fresher
+#     }
+
+# def save_feedback(resume_id, feedback):
+#     with open("feedback.json", "a") as f:
+#         f.write(json.dumps({"resume_id": resume_id, "feedback": feedback}) + "\n")
+
+
+
 import re
 import json
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain.prompts import PromptTemplate
 from langchain.embeddings import OpenAIEmbeddings
+import streamlit as st
 
-# Add this check before doing anything
+# ✅ Extract name and email from resume
+
+def extract_name_email(resume_text):
+    email_match = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", resume_text)
+    email = email_match.group(0) if email_match else "unknown"
+
+    lines = resume_text.strip().split("\n")
+    name = lines[0].strip() if lines else "Candidate"
+
+    return name, email
+
+# ✅ Check if resume text is valid
 def is_valid_resume(text):
     if len(text.strip().split()) < 50:
         return False
-    keywords = ['education', 'experience', 'skills', 'project', 'certification']
-    return any(kw in text.lower() for kw in keywords)
+    common_sections = ['education', 'experience', 'skills', 'project', 'certification']
+    return any(section in text.lower() for section in common_sections)
 
-# ------------------ Embedding Similarity ------------------
+# ✅ Embedding similarity calculation
 def embedding_similarity(jd, resume):
     embed = OpenAIEmbeddings()
     jd_vec = embed.embed_query(jd)
     res_vec = embed.embed_query(resume)
     score = cosine_similarity([jd_vec], [res_vec])[0][0]
-    return round(score * 10, 2)  # Normalize to 0–10 scale
+    return round(score * 10, 2)
 
-# ------------------ Compute Similarity ------------------
+# ✅ LLM + Embedding similarity
 def compute_similarity(state):
-    jd = state["jd_text"]
-    resume = state["resume_text"]
+    jd = state.get("jd_text", "")
+    resume = state.get("resume_text", "")
 
     if not is_valid_resume(resume):
-        return {
-            **state,
-            "llm_score": 0,
-            "embedding_score": 0,
-            "similarity_score": 0
-        }
+        return {**state, "llm_score": 0, "embedding_score": 0, "similarity_score": 0}
 
-    # 1. LLM-based similarity
     prompt = PromptTemplate.from_template("""
-    Given the job description: {jd}
-    And the resume: {resume}
-    How well does the resume match the job description?
-    Return a score from 0 to 10.
+    Given the following job description and resume, rate how well the resume matches the job description on a scale of 0 to 10.
+
+    Job Description:
+    {jd}
+
+    Resume:
+    {resume}
+
+    Return ONLY a number (0 to 10).
     """)
     chain = prompt | llm
     response = chain.invoke({"jd": jd, "resume": resume})
     match = re.search(r"\b([0-9]{1,2})\b", response.content)
     llm_score = int(match.group(1)) if match else 0
 
-    # 2. Embedding-based similarity
     try:
         embed_score = embedding_similarity(jd, resume)
-    except Exception as e:
+    except Exception:
         embed_score = 0
 
-    # 3. Combined score (reduced weight for embedding)
-    combined_score = round(0.4 * llm_score + 0.4 * embed_score, 2)
+    combined_score = round((0.4 * llm_score) + (0.4 * embed_score), 2)
 
     return {
         **state,
@@ -244,10 +542,10 @@ def compute_similarity(state):
         "similarity_score": combined_score
     }
 
-# ------------------ Resume Classification ------------------
+# ✅ Resume role classification (optional - if needed)
 def classify_resume(state):
     prompt = PromptTemplate.from_template("""
-    Classify the resume below into **only one** job category from this list, based on how well it matches the provided job description:
+    Based on the job description and resume provided below, classify the resume into **only one** of the following roles:
 
     - AI Engineer
     - Data Analyst
@@ -258,6 +556,11 @@ def classify_resume(state):
     - Frontend Developer
     - Full Stack Developer
     - DevOps Engineer
+    - HR Executive
+    - HR Intern
+    - Business Development Intern
+    - Business Analyst
+    - Business Analyst Intern
 
     Job Description:
     {jd}
@@ -265,26 +568,25 @@ def classify_resume(state):
     Resume:
     {resume}
 
-    Only return one of the above job categories exactly as-is. No explanation.
+    Return only one role name from the above list. No explanation.
     """)
     chain = prompt | llm
     response = chain.invoke({"jd": state["jd_text"], "resume": state["resume_text"]})
-    
-    job_type = response.content.strip()
-    return {**state, "job_type": job_type}
+    return {**state, "job_type": response.content.strip()}
 
-
-# ------------------ Extract Skills, Education, Experience ------------------
+# ✅ Extract top 10 skills, education, experience
 def analyze_skills_education_experience(state):
     prompt = PromptTemplate.from_template("""
-    From the following resume text, extract:
-    - Top 5 relevant skills
-    - Education level
-    - Years of experience
+    From the following resume text, extract the following fields:
+
+    - skills: Top 10 relevant skills (as a list)
+    - education: Highest level of education
+    - experience: Total years of professional experience (number or string like "fresher")
 
     Resume:
     {resume}
-    Just return JSON with keys: skills, education, experience
+
+    Return a valid JSON with keys: skills, education, experience
     """)
     chain = prompt | llm
     response = chain.invoke({"resume": state["resume_text"]})
@@ -292,70 +594,203 @@ def analyze_skills_education_experience(state):
     try:
         analysis_dict = json.loads(response.content)
     except json.JSONDecodeError:
-        analysis_dict = {
-            "skills": [],
-            "education": "Unknown",
-            "experience": "0"
-        }
+        analysis_dict = {"skills": [], "education": "Unknown", "experience": "0"}
 
     return {**state, "analysis": analysis_dict}
 
-# ------------------ Final Resume Scoring ------------------
-# def score_resume(state):
-#     similarity = state.get("similarity_score", 0)
-#     analysis = state.get("analysis", {})
+# ✅ Extract required years of experience
+def extract_required_experience(jd_text):
+    match = re.search(r"(\d+)[+\s]*years? of experience", jd_text.lower())
+    return int(match.group(1)) if match else 0
 
-#     # Parse experience
+# ✅ Detect fresher
+def is_fresher(exp_str):
+    exp_str = exp_str.lower().strip()
+    if "fresher" in exp_str:
+        return True
+    match = re.search(r"[\d.]+", exp_str)
+    exp_years = float(match.group()) if match else 0.0
+    return exp_years < 1.0
+
+# ✅ Scoring logic
+MIN_SIMILARITY_THRESHOLD = 0.5
+
+# def score_resume(state):
+#     similarity = state.get("similarity_score", 0.0)
+#     analysis = state.get("analysis", {})
+#     jd_text = state.get("jd_text", "")
+
+#     if similarity < MIN_SIMILARITY_THRESHOLD:
+#         return {**state, "score": 0, "experience_filtered": False, "ai_irrelevant": True}
+
 #     exp_str = analysis.get("experience", "0")
+#     fresher = is_fresher(exp_str)
 #     match = re.search(r"[\d.]+", exp_str)
 #     exp_years = float(match.group()) if match else 0.0
 
-#     # Count skills
-#     skills_count = len(analysis.get("skills", []))
+#     required_exp = extract_required_experience(jd_text)
+#     if not fresher and required_exp > 0 and exp_years < required_exp:
+#         return {**state, "score": 0, "experience_filtered": True, "ai_irrelevant": False}
 
-#     # Final weighted score: similarity (40%) + experience (30%) + skills (30%)
-#     score = (0.4 * similarity) + (0.3 * min(exp_years, 10)) + (0.3 * min(skills_count, 10))
-#     return {**state, "score": round(score, 2)}
-import re
+#     skills = analysis.get("skills", [])
+#     skills_count = len(skills)
 
-# ✅ Extract required experience dynamically from JD text
-def extract_required_experience(jd_text):
-    match = re.search(r"(\d+)[+\s]*years? of experience", jd_text.lower())
-    return int(match.group(1)) if match else None  # None if no experience mentioned
+#     normalized_similarity = min(similarity, 1.0)
+#     normalized_exp = 0.0 if fresher else min(exp_years / 10.0, 1.0)
+#     normalized_skills = min(skills_count / 10.0, 1.0)
 
-# ✅ Resume scoring with adjusted weights
+#     weighted_score = (0.7 * normalized_similarity) + (0.15 * normalized_exp) + (0.15 * normalized_skills)
+#     final_score = min(weighted_score * 10.0, 10.0)
+
+#     return {
+#         **state,
+#         "score": round(final_score, 2),
+#         "experience_filtered": False,
+#         "ai_irrelevant": False,
+#         "fresher": fresher
+#     }
 def score_resume(state):
-    similarity = state.get("similarity_score", 0)
+    similarity = state.get("similarity_score", 0.0)
     analysis = state.get("analysis", {})
-    
-    # --- Extract years of experience from resume text ---
+    jd_text = state.get("jd_text", "")
+    resume_text = state.get("resume_text", "")
+
+    # ✅ Filter out resumes with low similarity
+    if similarity < 0.7:
+        return {
+            **state,
+            "score": 0,
+            "experience_filtered": False,
+            "ai_irrelevant": True
+        }
+
+    # ✅ Extract experience
     exp_str = analysis.get("experience", "0")
+    fresher = is_fresher(exp_str)
     match = re.search(r"[\d.]+", exp_str)
     exp_years = float(match.group()) if match else 0.0
 
-    # --- Extract required experience from JD ---
-    required_exp = extract_required_experience(state["jd_text"])
+    required_exp = extract_required_experience(jd_text)
+    if not fresher and required_exp > 0 and exp_years < required_exp:
+        return {
+            **state,
+            "score": 0,
+            "experience_filtered": True,
+            "ai_irrelevant": False
+        }
 
-    # ✅ If JD mentioned required experience and resume is less, filter out
-    if required_exp is not None and exp_years < required_exp:
-        return {**state, "score": 0, "experience_filtered": True}
+    # ✅ Extract skills
+    skills = analysis.get("skills", [])
+    skills_count = len(skills)
 
-    # --- Skills count ---
-    skills_count = len(analysis.get("skills", []))
+    # ✅ Keyword overlap penalty
+    jd_keywords = set(re.findall(r'\w+', jd_text.lower()))
+    resume_keywords = set(re.findall(r'\w+', resume_text.lower()))
+    keyword_overlap = jd_keywords & resume_keywords
+    overlap_score = len(keyword_overlap) / (len(jd_keywords) + 1)
 
-    # ✅ New weights: 50% similarity, 20% experience, 30% skills
-    score = (0.5 * similarity) + (0.2 * min(exp_years, 10)) + (0.3 * min(skills_count, 10))
+    if overlap_score < 0.03:  # If <3% of JD words found in resume
+        return {
+            **state,
+            "score": 0,
+            "experience_filtered": False,
+            "ai_irrelevant": True
+        }
+
+    # ✅ Normalize inputs
+    normalized_similarity = min(similarity, 1.0)
+    normalized_exp = 0.0 if fresher else min(exp_years / 10.0, 1.0)
+    normalized_skills = min(skills_count / 10.0, 1.0)
+
+    # ✅ Stricter weighted scoring
+    weighted_score = (
+        0.5 * normalized_similarity +
+        0.25 * normalized_exp +
+        0.25 * normalized_skills
+    )
+    final_score = round(min(weighted_score * 10.0, 10.0), 2)
 
     return {
         **state,
-        "score": round(score, 2),
-        "experience_filtered": False
+        "score": final_score,
+        "experience_filtered": False,
+        "ai_irrelevant": False,
+        "fresher": fresher
     }
 
 
-def save_feedback(resume_id, feedback):
-    with open("feedback.json", "a") as f:
-        f.write(json.dumps({"resume_id": resume_id, "feedback": feedback}) + "\n")
+
+
+
+def rank_top_candidates(processed_resumes):
+    # Only use already scored resumes
+    scored_resumes = [res for res in processed_resumes if res.get("score", 0) > 0]
+
+    # Sort by score
+    scored_resumes.sort(key=lambda x: x["score"], reverse=True)
+
+    # Assign rank
+    for i, res in enumerate(scored_resumes, 1):
+        res["rank"] = i
+
+    return scored_resumes[:4]  # Change to [:2] if needed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

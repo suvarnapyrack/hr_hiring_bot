@@ -29,3 +29,4 @@ openpyxl
 langchain-community
 langchain-openai
 chromadb
+pymupdf
