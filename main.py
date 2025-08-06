@@ -26,8 +26,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from app.langgraph_flow import graph
-from app.utils import fetch_resumes_from_gmail, extract_text_from_pdf#, send_feedback_email
-
+from app.utils import fetch_resumes_from_gmail, extract_text_from_pdf,extract_mobile#, send_feedback_email
 
 load_dotenv()
 
@@ -61,7 +60,8 @@ def process_resumes(resume_items, jd_text):
             "resume_text": resume_text,  # ✅ ADD this line for ranking
             "resume_path": path,
             "resume_id": f"resume_{i}",
-            "sender_email": sender
+            "sender_email": sender,
+            "mobile": extract_mobile(resume_text)  # Extract mobile number from resume text
         }
 
         # Step 1: Run LangGraph
@@ -78,7 +78,7 @@ def process_resumes(resume_items, jd_text):
         name = state.get("name", f"Candidate {i+1}")
         email = state.get("email", sender)
         score = state.get("score", 0)
-        feedback = "Accept" if score >= 6 else "Reject"
+        feedback = "Accept" if score >= 6.5 else "Reject"
 
         # ✅ Append all required fields
         all_results.append({
@@ -86,6 +86,7 @@ def process_resumes(resume_items, jd_text):
             "email": email,
             "score": score,
             "feedback": feedback,
+            "mobile": state.get("mobile", "Not available"),
             "resume_path": path,
             "resume_text": resume_text,     # ✅ needed for ranking
             "resume_id": f"resume_{i}",     # ✅ optional, used in utils
@@ -97,7 +98,7 @@ def process_resumes(resume_items, jd_text):
 import os
 import re
 import streamlit as st
-from app.utils import extract_text_from_pdf, fetch_resumes_from_gmail, rank_top_candidates
+from app.utils import extract_text_from_pdf, fetch_resumes_from_gmail, rank_top_candidates,extract_mobile
 
 # ✅ Display Ranked Candidates
 def display_ranked_candidates(processed_resumes):
@@ -148,7 +149,9 @@ def run_streamlit():
                 for i, res in enumerate(results, 1):
                     with st.expander(f"📌 Candidate {i}: {res['name']}"):
                         st.markdown(f"- **Email:** {res['email']}")
-                        st.markdown(f"- **Score:** `{res['score']}`")
+                        st.markdown(f"- **Mobile:** `{res['mobile']}`")
+
+                        st.markdown(f"- **Score:** `{res['score']}")
                         st.markdown(f"- **Feedback:** `{res['feedback']}`")
                         st.markdown(f"- **Resume:** [Open Resume]({res['resume_path']})")
 

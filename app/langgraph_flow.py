@@ -16,6 +16,7 @@ class ResumeState(TypedDict):
     job_type: str
     analysis: str
     score: float
+    mobile: int
 
 
 

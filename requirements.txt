@@ -30,3 +30,7 @@ langchain-community
 langchain-openai
 chromadb
 pymupdf
+spacy
+sentence-transformers 
+ 
+scikit-learn
