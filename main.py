@@ -26,7 +26,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from app.langgraph_flow import graph
-from app.utils import fetch_resumes_from_gmail, extract_text_from_pdf,extract_mobile#, send_feedback_email
+from app.utils import fetch_resumes_from_gmail, extract_text_from_pdf,extract_mobile #, send_feedback_email
 
 load_dotenv()
 
@@ -114,7 +114,7 @@ def display_ranked_candidates(processed_resumes):
         st.markdown(f"""
         ### 🥇 Rank {candidate['rank']}: {candidate['name']}
         - **Email:** {candidate['email']}
-        - **Score:** `{candidate['score']}`
+        - **Score:** {candidate['score']}
         """)
 
 
@@ -149,9 +149,9 @@ def run_streamlit():
                 for i, res in enumerate(results, 1):
                     with st.expander(f"📌 Candidate {i}: {res['name']}"):
                         st.markdown(f"- **Email:** {res['email']}")
-                        st.markdown(f"- **Mobile:** `{res['mobile']}`")
+                        st.markdown(f"- **Mobile:** {res['mobile']}")
 
-                        st.markdown(f"- **Score:** `{res['score']}")
+                        st.markdown(f"- **Score:** {res['score']}")
                         st.markdown(f"- **Feedback:** `{res['feedback']}`")
                         st.markdown(f"- **Resume:** [Open Resume]({res['resume_path']})")
 
@@ -178,8 +178,8 @@ def run_streamlit():
             for i, res in enumerate(results, 1):
                 with st.expander(f"📌 Candidate {i}: {res['name']}"):
                     st.markdown(f"- **Email:** {res['email']}")
-                    st.markdown(f"- **Score:** `{res['score']}`")
-                    st.markdown(f"- **Feedback:** `{res['feedback']}`")
+                    st.markdown(f"- **Score:** {res['score']}")
+                    st.markdown(f"- **Feedback:** {res['feedback']}")
                     st.markdown(f"- **Resume:** [Open Resume]({res['resume_path']})")
 
             # Show top ranked
@@ -200,8 +200,8 @@ def run_streamlit():
             result = graph.invoke(state)
 
             st.success("✅ Resume Processed")
-            st.markdown(f"📌 **Job Type:** `{result.get('job_type')}`")
-            st.markdown(f"🏆 **Final Score:** `{result.get('score')}`")
+            st.markdown(f"📌 **Job Type:** {result.get('job_type')}")
+            st.markdown(f"🏆 **Final Score:** {result.get('score')}")
 
 # ✅ Run the app
 if __name__ == "__main__":
