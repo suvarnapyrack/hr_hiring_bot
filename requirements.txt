@@ -34,3 +34,12 @@ spacy
 sentence-transformers 
  
 scikit-learn
+
+gdown 
+python-docx 
+docx2txt
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib 
+google-auth 
+gspread

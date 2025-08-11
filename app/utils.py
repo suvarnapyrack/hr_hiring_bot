@@ -415,7 +415,8 @@ def clean_text(text):
 
 def parse_resume(state):
     raw_text = state["resume"]
-    cleaned_text = clean_text(raw_text)  # only if needed separately
+    cleaned_text = clean_text(raw_text)
+    print(f"✅ Parsed resume text (first 300 chars):\n{cleaned_text[:300]}")
     return {**state, "resume_text": cleaned_text}
   
 
