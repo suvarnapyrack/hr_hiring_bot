@@ -876,51 +876,66 @@ def run_streamlit():
                     
                 except Exception as e:
                     st.error(f"❌ Error fetching from Drive: {e}")
+    
 
     elif source == "View Results":
         st.subheader("📊 Resume Processing & Results")
-        
-       
-       
-        for i in st.session_state:
-            print("*******")
-            print(f"key {i}  --------- value {st.session_state[i]}")
 
+        # Debug: Print all session state keys/values
+        for k, v in st.session_state.items():
+            print(f"*******\nkey: {k}  --------- value: {v}")
 
-        if st.session_state["resume_items"]:
+        if st.session_state.get("resume_items"):
             st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded")
-            print("hiii           ",st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded"))
-            # Show preview
+
             with st.expander("📋 View loaded resumes"):
-                for i, item in enumerate(st.session_state["resume_items"], 0):
-                    filename = st.session_state.get("resume")
+                for i, resume_path in enumerate(st.session_state["resume_items"], start=1):
+                    filename = os.path.basename(resume_path)  # Safe for any OS
                     sender = st.session_state.get("sender_email", "Unknown")
-                    st.write(f"{i}. **{filename}** (from: {sender})")
+
+                    # Make a clickable link to open the file locally
+                    st.markdown(
+                        f"{i}. [{filename}](file:///{resume_path}) (from: {sender})",
+                        unsafe_allow_html=True
+                    )
+
         else:
             st.info("No resumes in workspace. Use other tabs to load resumes.")
 
+    # elif source == "View Results":
+    #     st.subheader("📊 Resume Processing & Results")
+        
+       
+       
+    #     for i in st.session_state:
+    #         print("*******")
+    #         print(f"key {i}  --------- value {st.session_state[i]}")
+
+
+    #     if st.session_state["resume_items"]:
+    #         st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded")
+    #         print("hiii           ",st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded"))
+    #         # Show preview
+    #         # with st.expander("📋 View loaded resumes"):
+    #         #     for i, item in enumerate(st.session_state["resume_items"], 0):
+    #         #         filename = st.session_state.get("resume")
+    #         #         sender = st.session_state.get("sender_email", "Unknown")
+    #         #         st.write(f"{i}. **{filename}** (from: {sender})")
+    #         with st.expander("📋 View loaded resumes"):
+    #             for i, resume_path in enumerate(st.session_state["resume_items"], 1):
+    #                 filename = resume_path.split("/")[-1]  # Just filename, not full path
+    #                 sender = st.session_state.get("sender_email", "Unknown")
+    #                 # st.write(f"{i}. **{filename}** (from: {sender})")
+    #                 resume_path = st.session_state["resume_items"][i-1]  # get full path for each resume
+    #                 filename = resume_path.split("/")[-1]
+    #                 st.markdown(f"{i}. [{filename}](file://{resume_path}) (from: {sender})")
+
+
+    #     else:
+    #         st.info("No resumes in workspace. Use other tabs to load resumes.")
+
     
-        # if "resume_items" not in st.session_state:
-        #     st.session_state["resume_items"] = []
-
-        # elif isinstance(st.session_state["resume_items"], dict):
-        #     st.session_state["resume_items"] = [st.session_state["resume_items"]]
-
-        # Now safe to append
-        # st.session_state["resume_items"].append({
-        #     "resume": uploaded_resume_path,
-        #     "jd_text": st.session_state["jd_text"],
-        #     "source_type": "drive"
-        # })
-
-
-
-
-      
-
-
-
-        # Processing section
+        
         col1, col2, col3 = st.columns(3)
         
         with col1:

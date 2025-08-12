@@ -452,7 +452,8 @@
 
 
 
-
+import mimetypes
+from pathlib import Path
 import os
 import re
 import pdfplumber
@@ -508,7 +509,7 @@ from app.shared_types import ResumeState
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.langgraph_flow import ResumeState
-def choose_source(state: ResumeState) -> ResumeState:
+def choose_source(state: ResumeState) -> ResumeState:#  
     """
     Entry point - determines which source to use for fetching resumes
     This should be configured based on your needs
@@ -524,11 +525,6 @@ import imaplib
 from datetime import datetime, timedelta
 from typing import List, Dict
 
-import os
-import imaplib
-import email
-from datetime import datetime, timedelta
-from typing import List, Dict
 
 def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: str = "resumes/gmail") -> list[dict]:
     """
@@ -605,9 +601,317 @@ def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail") -> dict:
         return {**state, "resumes": []}
 
 
-def fetch_from_drive(state: ResumeState) -> ResumeState:
+# def fetch_from_drive(state: ResumeState) -> ResumeState:
+#     """
+#     Fetch resumes from Google Drive via Google Sheets
+#     """
+#     SCOPES = [
+#         'https://www.googleapis.com/auth/spreadsheets',
+#         'https://www.googleapis.com/auth/drive'
+#     ]
+
+#     def get_file_id(drive_url):
+#         if "id=" in drive_url:
+#             return drive_url.split("id=")[1]
+#         elif "/d/" in drive_url:
+#             return drive_url.split("/d/")[1].split("/")[0]
+#         return None
+
+#     def convert_to_direct_download(drive_url):
+#         file_id = get_file_id(drive_url)
+#         if file_id:
+#             return f"https://drive.google.com/uc?export=download&id={file_id}"
+#         return None
+
+#     try:
+#         creds = service_account.Credentials.from_service_account_file(
+#             r'D:\hr_chatboat\credentials.json',
+#             scopes=SCOPES
+#         )
+#         gc = gspread.authorize(creds)
+        
+#         SHEET_ID = '10kEyz4UgkQgsxYLHyUUro3uj4Qgk63aQqlDjhiXdqLw'
+#         sh = gc.open_by_key(SHEET_ID)
+#         ws = sh.sheet1
+        
+#         rows = ws.get_all_records()
+#         df = pd.DataFrame(rows)
+        
+#         resume_links = df["resume file"].dropna().tolist()
+        
+#         os.makedirs("resumes/from_drive", exist_ok=True)
+        
+#         downloaded_resumes = []
+#         for i, link in enumerate(resume_links, start=1):
+#             direct_url = convert_to_direct_download(link)
+#             if direct_url:
+#                 response = requests.get(direct_url)
+#                 if response.status_code == 200:
+#                     file_path = f"resumes/from_drive/resume_{i}.pdf"
+#                     with open(file_path, "wb") as f:
+#                         f.write(response.content)
+#                     downloaded_resumes.append(file_path)
+#                     print(f"✅ Downloaded: {file_path}")
+        
+#         # if downloaded_resumes:
+#         #     # Return first resume for processing
+#         #     return {**state, "resume": downloaded_resumes[0]}
+#         # else:
+#         #     print("❌ No resumes downloaded from Drive")
+#         #     return {**state, "resume": None}
+#         if downloaded_resumes:
+#             # Return the list of all downloaded resumes
+#             return downloaded_resumes
+#         else:
+#             return []
+
+#     except Exception as e:
+#         print("❌ Error fetching from Drive:", e)
+#         return {**state, "resume": None}
+
+# def fetch_from_drive(state: ResumeState) -> ResumeState:
+#     """
+#     Fetch resumes from Google Drive via Google Sheets, preserving original file names
+#     """
+#     SCOPES = [
+#         'https://www.googleapis.com/auth/spreadsheets',
+#         'https://www.googleapis.com/auth/drive'
+#     ]
+
+#     def get_file_id(drive_url):
+#         if "id=" in drive_url:
+#             return drive_url.split("id=")[1]
+#         elif "/d/" in drive_url:
+            
+#             return drive_url.split("/d/")[1].split("/")[0]
+#         return None
+    
+    
+#     def convert_to_direct_download(drive_url):
+#         file_id = get_file_id(drive_url)
+#         if file_id:
+#             return f"https://drive.google.com/uc?export=download&id={file_id}"
+#         return None
+
+#     try:
+#         creds = service_account.Credentials.from_service_account_file(
+#             r'D:\hr_chatboat\credentials.json',
+#             scopes=SCOPES
+#         )
+#         gc = gspread.authorize(creds)
+
+#         SHEET_ID = '10kEyz4UgkQgsxYLHyUUro3uj4Qgk63aQqlDjhiXdqLw'
+#         sh = gc.open_by_key(SHEET_ID)
+#         ws = sh.sheet1
+
+#         rows = ws.get_all_records()
+#         df = pd.DataFrame(rows)
+
+#         resume_links = df["resume file"].dropna().tolist()
+#         print(df["resume file"].tolist())
+        
+#         for link in resume_links:
+#             print("link:", link)
+#             print("file_id:", get_file_id(link))
+#         os.makedirs("resumes/from_drive", exist_ok=True)
+
+#         downloaded_resumes = []
+#         for link in resume_links:
+#             direct_url = convert_to_direct_download(link)
+#             if direct_url:
+#                 print(f"direct_url ----{direct_url}")
+#                 response = requests.get(direct_url, allow_redirects=True)
+#                 print(f"resonse {response}")
+
+
+#                 if response.status_code == 200:
+#                     # Try to get the original filename from HTTP headers
+#                     content_disp = response.headers.get("Content-Disposition")
+#                     if content_disp:
+#                         match = re.findall('filename="(.+)"', content_disp)
+#                         if match:
+#                             original_filename = match[0]
+#                         else:
+#                             original_filename = direct_url
+#                     else:
+#                         original_filename = direct_url
+
+#                     # Clean up filename to avoid invalid path characters
+#                     original_filename = re.sub(r'[\\/*?:"<>|]', "_", original_filename)
+
+#                     file_path = os.path.join("resumes/from_drive", original_filename)
+#                     with open(file_path, "wb") as f:
+#                         f.write(response.content)
+            
+#                     downloaded_resumes.append(direct_url)
+#                     print(f"✅ Downloaded: {direct_url}")
+ 
+
+#         # after response = requests.get(direct_url, allow_redirects=True)
+#             print("DEBUG: status", response.status_code)
+#             content_type = response.headers.get("Content-Type", "")
+#             print("DEBUG: Content-Type:", content_type)
+
+#             # If content-type isn't application/pdf, print a snippet to see the HTML/error
+#             if "application/pdf" not in content_type.lower():
+#                 print("DEBUG: NOT a PDF! Response snippet (first 500 chars):")
+#                 print(response.text[:500])
+#                 # skip saving this file (or save for inspection)
+#                 continue
+
+#             # Save file as before...
+#             file_path = Path("resumes/from_drive") / original_filename
+#             # afterwards check file bytes and size
+#             with open(file_path, "rb") as fh:
+#                 header = fh.read(5)
+#             print("DEBUG: saved file header bytes:", header)  # should show b'%PDF-'
+#             print("DEBUG: file size:", file_path.stat().st_size)
+
+#         return downloaded_resumes if downloaded_resumes else []
+
+#     except Exception as e:
+#         print("❌ Error fetching from Drive:", e)
+#         return []
+
+import pandas as pd
+import gspread
+import requests
+import os
+import re
+from pathlib import Path
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import io
+from pathlib import Path
+
+# def fetch_from_drive(state=None):
+#     """
+#     Fetch resumes from Google Drive via Google Sheets, preserving original file names
+#     """
+#     SCOPES = [
+#         'https://www.googleapis.com/auth/spreadsheets',
+#         'https://www.googleapis.com/auth/drive'
+#     ]
+
+#     def get_file_id(drive_url):
+#         if "id=" in drive_url:
+#             return drive_url.split("id=")[1]
+#         elif "/d/" in drive_url:
+#             return drive_url.split("/d/")[1].split("/")[0]
+#         return None
+
+#     def convert_to_direct_download(drive_url):
+#         file_id = get_file_id(drive_url)
+#         if file_id:
+#             return f"https://drive.google.com/uc?export=download&id={file_id}"
+#         return None
+
+#     try:
+#         creds = service_account.Credentials.from_service_account_file(
+#             r'D:\hr_chatboat\credentials.json',
+#             scopes=SCOPES
+#         )
+#         gc = gspread.authorize(creds)
+
+#         SHEET_ID = '10kEyz4UgkQgsxYLHyUUro3uj4Qgk63aQqlDjhiXdqLw'
+#         sh = gc.open_by_key(SHEET_ID)
+#         ws = sh.sheet1
+
+#         rows = ws.get_all_records()
+#         df = pd.DataFrame(rows)
+        
+#         drive_service = build("drive", "v3", credentials=creds)
+
+#             for link in resume_links:
+#                 file_id = get_file_id(link)
+#                 if not file_id:
+#                     continue
+
+#                 request = drive_service.files().get_media(fileId=file_id)
+#                 fh = io.BytesIO()
+#                 downloader = MediaIoBaseDownload(fh, request)
+#                 done = False
+#                 while not done:
+#                     status, done = downloader.next_chunk()
+
+#                 fh.seek(0)
+#                 file_path = Path("resumes/from_drive") / f"{file_id}.pdf"
+#                 with open(file_path, "wb") as f:
+#                     f.write(fh.read())
+
+#     print(f"✅ Saved: {file_path}")
+#         resume_links = df["resume file"].dropna().tolist()
+#         print("Resume links found:", resume_links)
+
+        # os.makedirs("resumes/from_drive", exist_ok=True)
+        # downloaded_resumes = []
+
+        # for link in resume_links:
+        #     direct_url = convert_to_direct_download(link)
+        #     if not direct_url:
+        #         continue
+
+        #     response = requests.get(direct_url)
+        #     print(f"Status code: {response.status_code} | URL: {direct_url}")
+
+        #     if response.status_code != 200:
+        #         print("❌ Failed to download")
+        #         continue
+
+        #     content_type = response.headers.get("Content-Type", "")
+        #     if "application/pdf" not in content_type.lower():
+        #         print("❌ Not a PDF file. Skipping...")
+        #         print(response.text[:500])
+        #         continue
+
+            # Try to extract original filename
+            # content_disp = response.headers.get("Content-Disposition", "")
+            # match = re.findall('filename="(.+)"', content_disp)
+            # if match:
+            #     original_filename = match[0]
+            # else:
+            #     original_filename = f"resume_{len(downloaded_resumes) + 1}.pdf"
+
+            # original_filename = re.sub(r'[\\/*?:"<>|]', "_", original_filename)
+    #         original_filename='test'
+    #         file_path = Path("resumes/from_drive") / original_filename
+
+    #         with open(file_path, "wb") as f:
+    #             f.write(response.content)
+
+    #         print(f"✅ Saved: {file_path}")
+    #         downloaded_resumes.append(str(file_path))
+
+    #     return downloaded_resumes
+
+    # except Exception as e:
+    #     print("❌ Error fetching from Drive:", e)
+    #     return []
+
+
+# from google.oauth2 import service_account
+# from googleapiclient.discovery import build
+# CREDS = r"D:\hr_chatboat\credentials.json"
+# SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# creds = service_account.Credentials.from_service_account_file(CREDS, scopes=SCOPES)
+# drive = build("drive", "v3", credentials=creds)
+# file_id = "10kEyz4UgkQgsxYLHyUUro3uj4Qgk63aQqlDjhiXdqLw"
+# meta = drive.files().get(fileId=file_id, fields="id,name,mimeType").execute()
+# print("meta:", meta)
+
+import os
+import io
+import pandas as pd
+import gspread
+from pathlib import Path
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+
+def fetch_from_drive(state=None):
     """
-    Fetch resumes from Google Drive via Google Sheets
+    Fetch resumes from Google Drive via Google Sheets using Drive API.
     """
     SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets',
@@ -621,52 +925,62 @@ def fetch_from_drive(state: ResumeState) -> ResumeState:
             return drive_url.split("/d/")[1].split("/")[0]
         return None
 
-    def convert_to_direct_download(drive_url):
-        file_id = get_file_id(drive_url)
-        if file_id:
-            return f"https://drive.google.com/uc?export=download&id={file_id}"
-        return None
-
     try:
+        # Authenticate
         creds = service_account.Credentials.from_service_account_file(
             r'D:\hr_chatboat\credentials.json',
             scopes=SCOPES
         )
+
+        # Read sheet
         gc = gspread.authorize(creds)
-        
         SHEET_ID = '10kEyz4UgkQgsxYLHyUUro3uj4Qgk63aQqlDjhiXdqLw'
         sh = gc.open_by_key(SHEET_ID)
         ws = sh.sheet1
-        
         rows = ws.get_all_records()
         df = pd.DataFrame(rows)
-        
+
         resume_links = df["resume file"].dropna().tolist()
-        
+        print("Resume links found:", resume_links)
+
+        # Prepare Drive API
+        drive_service = build("drive", "v3", credentials=creds)
         os.makedirs("resumes/from_drive", exist_ok=True)
-        
         downloaded_resumes = []
-        for i, link in enumerate(resume_links, start=1):
-            direct_url = convert_to_direct_download(link)
-            if direct_url:
-                response = requests.get(direct_url)
-                if response.status_code == 200:
-                    file_path = f"resumes/from_drive/resume_{i}.pdf"
-                    with open(file_path, "wb") as f:
-                        f.write(response.content)
-                    downloaded_resumes.append(file_path)
-                    print(f"✅ Downloaded: {file_path}")
-        
-        if downloaded_resumes:
-            # Return first resume for processing
-            return {**state, "resume": downloaded_resumes[0]}
-        else:
-            print("❌ No resumes downloaded from Drive")
-            return {**state, "resume": None}
-            
+
+        # Download each file
+        for link in resume_links:
+            file_id = get_file_id(link)
+            if not file_id:
+                print(f"❌ Could not extract file_id from: {link}")
+                continue
+
+            try:
+                request = drive_service.files().get_media(fileId=file_id)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+
+                fh.seek(0)
+                file_path = Path("resumes/from_drive") / f"{file_id}.pdf"
+                with open(file_path, "wb") as f:
+                    f.write(fh.read())
+
+                print(f"✅ Saved: {file_path}")
+                downloaded_resumes.append(str(file_path))
+
+            except Exception as e:
+                print(f"❌ Failed to download {link}: {e}")
+
+        return downloaded_resumes
+
     except Exception as e:
         print("❌ Error fetching from Drive:", e)
-        return {**state, "resume": None}
+        return []
+
+
 
 def fetch_from_folder(state: ResumeState) -> ResumeState:
     """
@@ -870,7 +1184,7 @@ def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
 From the resume text below, extract the following and return ONLY valid JSON (no explanation or formatting):
 - Top 10 relevant skills (as a list of strings)
 - Education level (as a single string)
-- Total years of experience (as a string number)
+- Total years of experience (as a string number)    #------prompt need to change
 
 Resume:
 {resume}
@@ -975,7 +1289,7 @@ def rank_top_candidates(processed_resumes):
     scored_resumes = [res for res in processed_resumes if res.get("score", 0) > 0]
 
     # Sort by score
-    scored_resumes.sort(key=lambda x: x["score"], reverse=True)
+    scored_resumes.sort(key=lambda x: x["score"], reverse=True) 
 
     # Assign rank
     for i, res in enumerate(scored_resumes, 1):
