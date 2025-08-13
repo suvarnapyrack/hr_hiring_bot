@@ -517,7 +517,7 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
                 "email": sender,
                 "score": score,
                 "feedback": feedback,
-                "mobile": result_state.get("mobile", "Not available"),
+                "mobile": result_state.get("extract_mobile", "Not available"),
                 "resume_path": path,
                 "filename": filename,
                 "job_type": result_state.get("job_type", "Unknown"),
@@ -644,6 +644,9 @@ def display_ranked_candidates(processed_resumes):
             col1, col2 = st.columns(2)
             
             with col1:
+                print(".................................*********************************************")
+                print(res.keys())
+
                 st.markdown("### 📋 Basic Info")
                 st.markdown(f"**Name:** {res.get('name','Unknown')}")
                 st.markdown(f"**Email:** {res.get('email','N/A')}")
@@ -661,8 +664,8 @@ def display_ranked_candidates(processed_resumes):
                 st.markdown("### 📊 Scores & Analysis")
                 st.markdown(f"**Final Score:** <span class='{score_class}'>{score}</span>", unsafe_allow_html=True)
                 st.markdown(f"**Similarity Score:** {res.get('similarity_score', 'N/A')}")
-                st.markdown(f"**LLM Score:** {res.get('llm_score', 'N/A')}")
-                st.markdown(f"**Embedding Score:** {res.get('embedding_score', 'N/A')}")
+                # st.markdown(f"**LLM Score:** {res.get('llm_score', 'N/A')}")
+                # st.markdown(f"**Embedding Score:** {res.get('embedding_score', 'N/A')}")
                 st.markdown(f"**Education:** {res.get('education', 'Unknown')}")
                 st.markdown(f"**Experience:** {res.get('experience', '0')} years")
             
@@ -761,10 +764,7 @@ def run_streamlit():
         
         with st.form("gmail_form"):
             col1, col2 = st.columns(2)
-            # with col1:
-            #     gmail_user = st.text_input("Gmail Username", placeholder="your-email@gmail.com")
-            # with col2:
-                # gmail_pass = st.text_input("App Password", type="password", help="Generate app password in Gmail settings")
+            
             
             submitted = st.form_submit_button("📥 Fetch Resumes")
             
@@ -888,51 +888,43 @@ def run_streamlit():
         if st.session_state.get("resume_items"):
             st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded")
 
-            with st.expander("📋 View loaded resumes"):
-                for i, resume_path in enumerate(st.session_state["resume_items"], start=1):
-                    filename = os.path.basename(resume_path)  # Safe for any OS
-                    sender = st.session_state.get("sender_email", "Unknown")
+            # with st.expander("📋 View loaded resumes"):
+            #     for i, resume_path in enumerate(st.session_state["resume_items"], start=1):
+            #         filename = os.path.basename(resume_path)  # Safe for any OS
+            #         sender = st.session_state.get("sender_email", "Unknown")
 
-                    # Make a clickable link to open the file locally
-                    st.markdown(
-                        f"{i}. [{filename}](file:///{resume_path}) (from: {sender})",
-                        unsafe_allow_html=True
-                    )
+            #         # Make a clickable link to open the file locally
+            #         st.markdown(
+            #             f"{i}. [{filename}](file:///{resume_path}) (from: {sender})",
+            #             unsafe_allow_html=True
+            #         )
+            with st.expander("📋 View loaded resumes"):
+                for i, resume_item in enumerate(st.session_state["resume_items"], start=1):
+                    
+                    # Handle both dict and string formats
+                    if isinstance(resume_item, dict):
+                        filepath = resume_item.get("filepath", "")
+                        filename = resume_item.get("filename", os.path.basename(filepath))
+                        sender = resume_item.get("sender_email", "Unknown")
+                    else:
+                        filepath = resume_item
+                        filename = os.path.basename(resume_item)
+                        sender = st.session_state.get("sender_email", "Unknown")
+                    
+                    # Only display if filepath is not empty
+                    if filepath:
+                        st.markdown(
+                            f"{i}. [{filename}](file:///{filepath}) (from: {sender})",
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.write(f"{i}. ❌ Invalid resume entry")
+
 
         else:
             st.info("No resumes in workspace. Use other tabs to load resumes.")
 
-    # elif source == "View Results":
-    #     st.subheader("📊 Resume Processing & Results")
-        
-       
-       
-    #     for i in st.session_state:
-    #         print("*******")
-    #         print(f"key {i}  --------- value {st.session_state[i]}")
-
-
-    #     if st.session_state["resume_items"]:
-    #         st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded")
-    #         print("hiii           ",st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded"))
-    #         # Show preview
-    #         # with st.expander("📋 View loaded resumes"):
-    #         #     for i, item in enumerate(st.session_state["resume_items"], 0):
-    #         #         filename = st.session_state.get("resume")
-    #         #         sender = st.session_state.get("sender_email", "Unknown")
-    #         #         st.write(f"{i}. **{filename}** (from: {sender})")
-    #         with st.expander("📋 View loaded resumes"):
-    #             for i, resume_path in enumerate(st.session_state["resume_items"], 1):
-    #                 filename = resume_path.split("/")[-1]  # Just filename, not full path
-    #                 sender = st.session_state.get("sender_email", "Unknown")
-    #                 # st.write(f"{i}. **{filename}** (from: {sender})")
-    #                 resume_path = st.session_state["resume_items"][i-1]  # get full path for each resume
-    #                 filename = resume_path.split("/")[-1]
-    #                 st.markdown(f"{i}. [{filename}](file://{resume_path}) (from: {sender})")
-
-
-    #     else:
-    #         st.info("No resumes in workspace. Use other tabs to load resumes.")
+    
 
     
         
