@@ -364,6 +364,127 @@ def parse_resume(state: Dict) -> Dict:
 
 #     return state
 
+# def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
+#     """
+#     Extract skills, education, and experience from resume
+#     """
+#     try:
+        
+#         prompt = PromptTemplate.from_template("""
+# From the resume text below, extract the following and return ONLY valid JSON (no explanation or formatting):
+# - Top 10 relevant skills (as a list of strings)
+# - Education level (as a single string)
+# -A string representing the total years of professional work experience.Only count if explicit work experience is mentioned in a particular section (e.g., "2 years", "3.5 years", "Worked from 2019 to 2021").If the candidate is a fresher or no experience is mentioned, return "0".
+# Resume:
+# {resume}
+
+# Respond ONLY in this JSON format:
+# {{
+#   "skills": ["..."],
+#   "education": "...",
+#   "experience": "..."
+# }}""")
+
+#         chain = prompt | llm
+#         response = chain.invoke({"resume": state.get("resume_text", "")})
+        
+#         print("✅ LLM raw response:\n", response.content)
+
+#         try:
+#             analysis_dict = json.loads(response.content)
+#         except json.JSONDecodeError:
+#             try:
+#                 import ast
+#                 analysis_dict = ast.literal_eval(response.content)
+#             except Exception:
+#                 analysis_dict = {
+#                     "skills": [],
+#                     "education": "Unknown",
+#                     "experience": "0"
+#                 }
+
+#         print("✅ Final parsed analysis:\n", analysis_dict)
+#         return {**state, "analysis": analysis_dict}
+        
+#     except Exception as e:
+#         print(f"❌ Analysis failed: {e}")
+#         return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
+def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
+    """
+    Extract skills, education, and experience from resume
+    """
+    import re, json, ast
+
+    try:
+        resume_text = state.get("resume_text", "")
+
+        prompt = PromptTemplate.from_template("""
+You are an information extraction system.  
+Your task is to read the resume text and extract exactly this data:  
+- Top 10 relevant skills (list of strings)  
+- Education level (string)  
+- total_experience_years: Total professional work experience in years (string, e.g., "2", "3.5", "0")
+
+Rules for total_experience_years:
+1. Count ONLY if the resume explicitly states the duration in years/months or has start and end dates (e.g., "Aug 2024 - Dec 2024").
+2. If duration is in months, convert to years with one decimal place (e.g., "5 months" → "0.4").
+3. If multiple experiences are listed, sum them up.
+4. Do NOT infer or guess based on skills, job titles, or education.
+5. If no explicit duration is mentioned, return "0".
+6. Never round up — keep the exact lower bound.
+
+You must respond with **only valid JSON**. No explanation. No extra words.  
+If a field is missing in the resume, use defaults: [] for skills, "Unknown" for education, "0" for experience.  
+
+Resume:
+{resume}
+
+JSON response format (strictly follow this):
+{
+  "skills": ["Python", "TensorFlow", "..."],
+  "education": "Bachelor of Pharmacy",
+  "experience": "0.8"
+}
+""")
+
+        chain = prompt | llm
+        response = chain.invoke({"resume": resume_text})
+        raw_response = response.content.strip()
+        print("✅ LLM raw response:\n", raw_response)
+
+        # Clean up potential markdown wrappers
+        raw_response = re.sub(r"```(json)?", "", raw_response).strip()
+
+        # Extract JSON portion
+        if "{" in raw_response and "}" in raw_response:
+            json_str = raw_response[raw_response.find("{"): raw_response.rfind("}") + 1]
+        else:
+            json_str = raw_response
+
+        # Parse JSON safely
+        try:
+            analysis_dict = json.loads(json_str)
+        except json.JSONDecodeError:
+            try:
+                analysis_dict = ast.literal_eval(json_str)
+            except Exception:
+                analysis_dict = {
+                    "skills": [],
+                    "education": "Unknown",
+                    "experience": "0"
+                }
+
+        # Ensure keys exist
+        analysis_dict.setdefault("skills", [])
+        analysis_dict.setdefault("education", "Unknown")
+        analysis_dict.setdefault("experience", "0")
+
+        print("✅ Final parsed analysis:\n", analysis_dict)
+        return {**state, "analysis": analysis_dict}
+
+    except Exception as e:
+        print(f"❌ Analysis failed: {e}")
+        return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
 
 def compute_similarity(state: ResumeState) -> ResumeState:
     """
@@ -473,21 +594,53 @@ def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
     Extract skills, education, and experience from resume
     """
     try:
-        
         prompt = PromptTemplate.from_template("""
-From the resume text below, extract the following and return ONLY valid JSON (no explanation or formatting):
-- Top 10 relevant skills (as a list of strings)
-- Education level (as a single string)
--A string representing the total years of professional work experience.Only count if explicit work experience is mentioned in a particular section (e.g., "2 years", "3.5 years", "Worked from 2019 to 2021").If the candidate is a fresher or no experience is mentioned, return "0".
-Resume:
-{resume}
+        You are an information extraction system.  
+        From the resume text below, extract exactly the following fields and return ONLY valid JSON (no extra words, no explanation):  
 
-Respond ONLY in this JSON format:
-{{
-  "skills": ["..."],
-  "education": "...",
-  "experience": "..."
-}}""")
+        - **skills** → Top 10 most relevant technical or professional skills (list of strings).  
+        - **education** → Highest education level mentioned (string).  
+        - "experience" → Calculate the total professional work experience in years (with 1 decimal precision). Follow these rules strictly:
+    1. Identify all periods of professional employment from the resume.
+       - Include internships only if they are labeled as work experience or have start and end dates.
+       - Ignore academic projects, coursework, certifications, and volunteer activities unless labeled as work experience.
+    2. For each date range:
+       - Convert start and end months to numeric values.
+       - If only the year is given (e.g., "2020 – 2021"), assume January for start month and December for end month.
+       - If month is missing but year is given for end date, assume December.
+       - If month is missing but year is given for start date, assume January.
+       - If end date is "Present" or "Current", use the current month and year.
+    3. Calculate the month difference, then convert to years with 1 decimal:
+       - Example: 4 months → 0.3 years, 6 months → 0.5 years, 18 months → 1.5 years.
+    4. If periods overlap, count the overlapping months only once.
+    5. Sum all non-overlapping periods to get total experience.
+    6. Output as a decimal string (e.g., "0.4", "2.0", "5.3").
+    7. Never round up to the next year.
+
+        Resume:
+        {resume}
+
+        Respond ONLY in this JSON format:
+        {{
+        "skills": ["Python", "TensorFlow", "..."],
+        "education": "Bachelor of Pharmacy",
+        "experience": "0.8"
+        }}
+        """)
+#         prompt = PromptTemplate.from_template("""
+# From the resume text below, extract the following and return ONLY valid JSON (no explanation or formatting):
+# - Top 10 relevant skills (as a list of strings)
+# - Education level (as a single string)
+# -A string representing the total years of professional work experience.Only count if explicit work experience is mentioned in a particular section (e.g., "2 years", "3.5 years", "Worked from 2019 to 2021").If the candidate is a fresher or no experience is mentioned, return "0".
+# Resume:
+# {resume}
+
+# Respond ONLY in this JSON format:
+# {{
+#   "skills": ["..."],
+#   "education": "...",
+#   "experience": "..."
+# }}""")
 
         chain = prompt | llm
         response = chain.invoke({"resume": state.get("resume_text", "")})

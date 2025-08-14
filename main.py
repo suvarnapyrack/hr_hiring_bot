@@ -1,442 +1,4 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import os
-# import re
-# import pdfplumber
-# import imaplib
-# import email
-# import streamlit as st
-# from dotenv import load_dotenv
-# from datetime import datetime, timedelta
-# from app.langgraph_flow import graph
-# from app.utils import fetch_resumes_from_gmail, extract_text_from_pdf,extract_mobile #, send_feedback_email
-
-# load_dotenv()
-
-
-
-
-
-
-
-
-    
-
-
-
-
-# from app.utils import extract_text_from_pdf
-# from app.langgraph_flow import graph  # Make sure graph is defined and imported
-
-# from app.utils import score_resume
-# def process_resumes(resume_items, jd_text):
-#     all_results = []
-
-#     for i, item in enumerate(resume_items):
-#         path = item["filepath"]
-#         sender = item.get("sender_email", "Unknown")
-#         resume_text = extract_text_from_pdf(path)
-
-#         state = {
-#             "jd_text": jd_text,
-#             "resume": resume_text,
-#             "resume_text": resume_text,  # ✅ ADD this line for ranking
-#             "resume_path": path,
-#             "resume_id": f"resume_{i}",
-#             "sender_email": sender,
-#             "mobile": extract_mobile(resume_text)  # Extract mobile number from resume text
-#         }
-
-#         # Step 1: Run LangGraph
-#         state = graph.invoke(state)
-
-#         # Step 2: Apply scoring
-#         state = score_resume(state)
-
-#         # Step 3: Skip resumes with low experience
-#         if state.get("experience_filtered"):
-#             continue
-
-#         # Step 4: Collect results
-#         name = state.get("name", f"Candidate {i+1}")
-#         email = state.get("email", sender)
-#         score = state.get("score", 0)
-#         feedback = "Accept" if score >= 6.5 else "Reject"
-
-#         # ✅ Append all required fields
-#         all_results.append({
-#             "name": name,
-#             "email": email,
-#             "score": score,
-#             "feedback": feedback,
-#             "mobile": state.get("mobile", "Not available"),
-#             "resume_path": path,
-#             "resume_text": resume_text,     # ✅ needed for ranking
-#             "resume_id": f"resume_{i}",     # ✅ optional, used in utils
-#         })
-
-#     return all_results
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import os
-# import streamlit as st
-# from app.utils import (
-#     extract_text_from_pdf,            # PDF text extractor (your existing function)
-#     fetch_resumes_from_gmail,        # should return list of resume items (e.g. dicts with filepath or bytes)
-#     # process_resumes,                 # your existing pipeline that scores resumes vs jd_text
-#     rank_top_candidates              # optional ranking function (fallback)
-# )
-
-# # -----------------------
-# # UI / CSS
-# # -----------------------
-# def load_custom_css():
-#     st.markdown(
-#         """
-#         <style>
-#         /* page background */
-#         .stApp {
-#             background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
-#             font-family: 'Inter', sans-serif;
-#         }
-
-#         /* header */
-#         h1 { color: #05386B; font-weight: 800; }
-
-#         /* sidebar - light */
-#         [data-testid="stSidebar"] {
-#             background: #fbfdff;
-#             border-right: 1px solid #e6eef6;
-#         }
-
-#         /* buttons */
-#         .stButton>button {
-#             background: linear-gradient(90deg,#0077b6,#00b4d8);
-#             color: white;
-#             border-radius: 10px;
-#             padding: 8px 14px;
-#             font-weight: 600;
-#         }
-#         .stButton>button:hover { transform: translateY(-2px); }
-
-#         /* candidate cards */
-#         .candidate-card {
-#             background: #ffffff;
-#             padding: 14px;
-#             border-radius: 12px;
-#             box-shadow: 0 6px 18px rgba(3, 23, 55, 0.06);
-#             margin-bottom: 12px;
-#         }
-
-#         /* small helper */
-#         .muted { color: #6b7280; font-size: 13px; }
-#         </style>
-#         """,
-#         unsafe_allow_html=True,
-#     )
-
-
-# # -----------------------
-# # Helper: Display results (expander style)
-# # -----------------------
-# def display_ranked_candidates(processed_resumes):
-#     """
-#     Accepts a list of processed resume dicts. Each dict ideally contains:
-#       - name, email, mobile, score, feedback, resume_path
-#     If processed_resumes is not ranked, attempt to call rank_top_candidates() to compute ordering.
-#     """
-#     if not processed_resumes:
-#         st.warning("⚠️ No candidates to display.")
-#         return
-
-#     # If items don't have a 'rank' key, attempt to rank them using rank_top_candidates
-#     need_rank = not all("rank" in r for r in processed_resumes)
-#     if need_rank:
-#         try:
-#             top = rank_top_candidates(processed_resumes)
-#         except Exception:
-#             # fallback: simple sort by 'score' if present
-#             top = sorted(processed_resumes, key=lambda x: x.get("score", 0), reverse=True)
-#         processed_resumes = top
-
-#     st.subheader("🏆 Top Ranked Candidates")
-#     for i, res in enumerate(processed_resumes, 1):
-#         with st.expander(f"📌 Candidate {i}: {res.get('name','Unknown')}"):
-#             st.markdown(f"📧 **Email:** {res.get('email','N/A')}")
-#             st.markdown(f"📱 **Mobile:** {res.get('mobile','N/A')}")
-#             st.markdown(f"💯 **Score:** {res.get('score','N/A')}")
-#             st.markdown(f"📝 **Feedback:** `{res.get('feedback','No feedback')}`")
-#             resume_link = res.get("resume_path") or res.get("filepath") or "#"
-#             st.markdown(f"📄 **Resume:** [Open Resume]({resume_link})")
-
-# # -----------------------
-# # Main app
-# # -----------------------
-# def run_streamlit():
-#     load_custom_css()
-#     st.set_page_config(page_title="HR Hiring Bot", layout="wide")
-
-#     # initialize session state
-#     if "resume_items" not in st.session_state:
-#         st.session_state["resume_items"] = []   # list of resume dicts or {"filepath":...}
-#     if "jd_text" not in st.session_state:
-#         st.session_state["jd_text"] = ""
-#     if "jd_submitted" not in st.session_state:
-#         st.session_state["jd_submitted"] = False
-#     if "results" not in st.session_state:
-#         st.session_state["results"] = []
-
-#     # top/header
-#     col1, col2 = st.columns([3, 1])
-#     with col1:
-#         st.markdown("<h1>🤖 HR Hiring Bot</h1>", unsafe_allow_html=True)
-#         st.markdown("<div class='muted'>Fetch resumes from Gmail / folder / manual upload → Submit JD → Rank candidates</div>", unsafe_allow_html=True)
-#     with col2:
-#         st.markdown("")  # reserved
-
-#     # Sidebar: choose source
-#     source = st.sidebar.radio("🔎 Select Source", ["Gmail", "Upload Folder", "Manual Upload", "View Results"])
-
-#     # -------------------------
-#     # Job Description area (main)
-#     # -------------------------
-#     st.markdown("## 📄 Job Description")
-#     jd_col1, jd_col2 = st.columns([4,1])
-#     with jd_col1:
-#         jd_text_input = st.text_area("Paste Job Description here (or upload JD file below)", height=180, value=st.session_state["jd_text"])
-#         jd_file = st.file_uploader("Optional: Upload JD (txt, pdf)", type=["txt","pdf"], help="If you upload a JD file it will replace the text area.")
-#     with jd_col2:
-#         if st.button("✅ Submit Job Description"):
-#             # if file uploaded, extract text (if pdf use extract_text_from_pdf)
-#             final_jd_text = ""
-#             if jd_file is not None:
-#                 if jd_file.name.lower().endswith(".pdf"):
-#                     # save temporarily and call your extractor
-#                     tmp_dir = "temp_jd"
-#                     os.makedirs(tmp_dir, exist_ok=True)
-#                     tmp_path = os.path.join(tmp_dir, jd_file.name)
-#                     with open(tmp_path, "wb") as f:
-#                         f.write(jd_file.getbuffer())
-#                     try:
-#                         final_jd_text = extract_text_from_pdf(tmp_path)
-#                     except Exception as e:
-#                         st.error("Error extracting text from JD PDF: " + str(e))
-#                         final_jd_text = ""
-#                 else:
-#                     try:
-#                         final_jd_text = jd_file.read().decode("utf-8")
-#                     except Exception:
-#                         final_jd_text = ""
-#             else:
-#                 final_jd_text = jd_text_input
-
-#             if final_jd_text and final_jd_text.strip():
-#                 st.session_state["jd_text"] = final_jd_text
-#                 st.session_state["jd_submitted"] = True
-#                 st.success("✅ Job Description submitted. You can now rank resumes.")
-#             else:
-#                 st.warning("⚠️ Please paste or upload a valid Job Description before submitting.")
-
-#     # Show current JD status
-#     if st.session_state["jd_submitted"]:
-#         st.info("✅ JD submitted. Ready for ranking.")
-#     else:
-#         st.info("ℹ️ JD not submitted yet — you can still fetch resumes and save them, then submit JD when ready.")
-
-#     st.markdown("---")
-
-#     # -------------------------
-#     # Source-specific UI
-#     # -------------------------
-#     if source == "Gmail":
-#         st.subheader("📩 Fetch from Gmail")
-#         with st.form("gmail_form", clear_on_submit=False):
-#             gmail_user = st.text_input("Gmail Username (or leave empty to use env)")
-#             gmail_pass = st.text_input("Gmail App Password / OAuth token", type="password")
-#             submitted = st.form_submit_button("📥 Fetch from Gmail")
-#             if submitted:
-#                 user = gmail_user.strip() or os.getenv("GMAIL_USER")
-#                 pwd = gmail_pass.strip() or os.getenv("GMAIL_PASS")
-#                 if not user or not pwd:
-#                     st.error("❌ Gmail credentials not provided (env or field).")
-#                 else:
-#                     with st.spinner("📡 Fetching resumes from Gmail..."):
-#                         try:
-#                             items = fetch_resumes_from_gmail(user, pwd)
-#                             # expected items: list of dicts (e.g. {'filepath': '/path/...', ...})
-#                             st.session_state["resume_items"] = items or []
-#                             st.success(f"✅ Fetched {len(st.session_state['resume_items'])} resumes from Gmail.")
-#                         except Exception as e:
-#                             st.error("Error fetching from Gmail: " + str(e))
-
-#         # show small preview of fetched files
-#         if st.session_state["resume_items"]:
-#             st.markdown("**Fetched resumes (preview):**")
-#             for r in st.session_state["resume_items"][:10]:
-#                 st.write("- " + (r.get("sender_email") or r.get("filename") or r.get("filepath", "Unknown")))
-
-#     elif source == "Upload Folder":
-#         st.subheader("📁 Upload Folder (multiple resumes)")
-#         st.markdown("Upload multiple resumes (pdf / docx) — they will be saved temporarily and listed.")
-#         uploaded_files = st.file_uploader("Upload multiple resumes", accept_multiple_files=True, type=["pdf","docx","doc"])
-#         if st.button("📂 Save uploaded files"):
-#             if not uploaded_files:
-#                 st.warning("Please upload one or more resume files.")
-#             else:
-#                 os.makedirs("temp_uploaded", exist_ok=True)
-#                 saved = []
-#                 for f in uploaded_files:
-#                     path = os.path.join("temp_uploaded", f.name)
-#                     with open(path, "wb") as out:
-#                         out.write(f.getbuffer())
-#                     saved.append({"filepath": path, "sender_email": "N/A", "filename": f.name})
-#                 st.session_state["resume_items"] = saved
-#                 st.success(f"✅ Saved {len(saved)} files to temp_uploaded.")
-#         if st.session_state["resume_items"]:
-#             st.markdown("**Recently uploaded resumes:**")
-#             for r in st.session_state["resume_items"]:
-#                 st.write("- " + (r.get("filename") or r.get("filepath")))
-
-#     elif source == "Manual Upload":
-#         st.subheader("📤 Manual Upload (single or multiple resumes)")
-#         uploaded_files = st.file_uploader("Upload resume(s)", accept_multiple_files=True, type=["pdf","docx","doc"])
-#         if st.button("📥 Add to workspace"):
-#             if not uploaded_files:
-#                 st.warning("Please upload resume(s).")
-#             else:
-#                 os.makedirs("temp_uploaded", exist_ok=True)
-#                 added = st.session_state.get("resume_items", [])
-#                 for f in uploaded_files:
-#                     path = os.path.join("temp_uploaded", f.name)
-#                     with open(path, "wb") as out:
-#                         out.write(f.getbuffer())
-#                     added.append({"filepath": path, "sender_email": "Manual Upload", "filename": f.name})
-#                 st.session_state["resume_items"] = added
-#                 st.success(f"✅ Added {len(uploaded_files)} resumes to workspace.")
-
-#         if st.session_state["resume_items"]:
-#             st.markdown("**Current workspace resumes (click View Results to see ranked output after submitting JD):**")
-#             for r in st.session_state["resume_items"]:
-#                 st.write("- " + (r.get("filename") or r.get("filepath")))
-
-#     elif source == "View Results":
-#         st.subheader("🧾 Workspace & Results")
-#         st.markdown("You can fetch/add resumes from any source (Gmail / Upload folder / Manual). They are stored temporarily in the workspace. Then submit a JD and click **Rank & Process** below to score them.")
-
-#         st.markdown("**Workspace resumes:**")
-#         if not st.session_state["resume_items"]:
-#             st.info("No resumes in workspace yet. Use Gmail / Upload / Manual to add resumes.")
-#         else:
-#             for r in st.session_state["resume_items"]:
-#                 st.write("- " + (r.get("filename") or r.get("filepath") or r.get("sender_email", "resume")))
-
-#         colA, colB = st.columns(2)
-#         with colA:
-#             if st.button("⚙️ Rank & Process resumes (use submitted JD)"):
-#                 if not st.session_state["resume_items"]:
-#                     st.warning("Please add/fetch resumes first.")
-#                 elif not st.session_state["jd_submitted"]:
-#                     st.warning("Please submit the Job Description first (top-right).")
-#                 else:
-#                     with st.spinner("⚙️ Processing & scoring resumes..."):
-#                         try:
-#                             # process_resumes should return a list of result dicts
-#                             results = process_resumes(st.session_state["resume_items"], st.session_state["jd_text"])
-#                             st.session_state["results"] = results or []
-#                             st.success("✅ Resume processing completed!")
-#                         except Exception as e:
-#                             st.error("Error during resume processing: " + str(e))
-#         with colB:
-#             if st.button("🧹 Clear workspace"):
-#                 st.session_state["resume_items"] = []
-#                 st.session_state["results"] = []
-#                 st.success("Workspace cleared.")
-
-#         # show processed results if present
-#         if st.session_state["results"]:
-#             display_ranked_candidates(st.session_state["results"])
-#         else:
-#             st.info("No processed results yet. After ranking, results will appear here.")
-
-#     # small footer
-#     # st.markdown("---")
-#     # st.markdown("💡 Tip: You can fetch resumes first (Gmail / Upload), submit JD anytime, then use **View Results → Rank & Process** to get the ranked candidates.")
-
-# # run
-# if __name__ == "__main__":
-#     run_streamlit()
-
-
-
-
-# import streamlit as st
-# import os
-# import pdfplumber
-
-
-# from dotenv import load_dotenv
-# load_dotenv()
-
-# import os
-# import streamlit as st
-# from email.mime.text import MIMEText
-# import smtplib
-
-
-# import re
-
-
-# def extract_email(raw_email):
-#     match = re.search(r'<(.+?)>', raw_email)
-#     return match.group(1).strip() if match else raw_email.strip()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import os
 import re
 import streamlit as st
@@ -451,9 +13,8 @@ from app.utils import extract_text_from_pdf, parse_resume
 from app.langgraph_flow import graph
 
 load_dotenv()
-# from app import create_resume_processing_graph
-# # Create the graph instance#
-# graph = create_resume_processing_graph()
+
+
 
 def process_resumes(resume_items, jd_text, source_type="manual"):
     """
@@ -468,7 +29,6 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
             sender = item.get("sender_email", "Unknown")
             filename = item.get("filename", f"resume_{i}")
         else:
-            # If item is just a string path
             path = item
             sender = "Unknown"
             filename = f"resume_{i}"
@@ -478,13 +38,29 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
             continue
 
         try:
-            # Create initial state for this resume
+            # ✅ STEP 1: Extract resume text first
+            resume_text = ""
+            if path.lower().endswith('.pdf'):
+                resume_text = extract_text_from_pdf(path)  # Make sure this function exists in utils.py
+            elif path.lower().endswith(('.docx', '.doc')):
+            #     resume_text = extract_text_from_docx(path)  # Make sure this function exists in utils.py
+            # elif path.lower().endswith('.txt'):
+                with open(path, 'r', encoding='utf-8') as f:
+                    resume_text = f.read()
+            
+            if not resume_text.strip():
+                st.warning(f"⚠️ Could not extract text from: {filename}")
+                continue
+
+            # ✅ STEP 2: Create initial state with extracted text
             initial_state = {
                 "source_type": source_type,
                 "jd_text": jd_text,
-                "resume": path,  # File path
-                "resume_text": "",  # Will be filled by parse_resume
-                "mobile": "",   # Will be filled by parse_resume
+                "resume": path,
+                "resume_text": resume_text,  # Now we have the actual text
+                "mobile": "",
+                "email": "",
+                "name": "",
                 "similarity_score": 0,
                 "llm_score": 0,
                 "embedding_score": 0,
@@ -495,29 +71,52 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
                 "rank": 0
             }
 
-            # Run the LangGraph pipeline
-            result_state = graph.invoke(initial_state)
+            # ✅ STEP 3: Parse the resume to extract name, email, mobile
+            parsed_state = parse_resume(initial_state)
+            print("=" * 50)
+            print(f"--parsed_state : {parsed_state}")
+            print("=" * 50)
+    
 
-            # Extract name from analysis or use default
-            analysis = result_state.get("analysis", {})
-            name = f"Candidate {i+1}"  # You can enhance this by extracting name from resume
-            
+            # Debug: Check if parsing worked
+            st.info(f"🔍 Parsing results for {filename}:")
+            st.info(f"   - Name: {parsed_state.get('name', 'Not found')}")
+            st.info(f"   - Email: {parsed_state.get('email', 'Not found')}")
+            st.info(f"   - Mobile: {parsed_state.get('mobile', 'Not found')}")
+
+            # ✅ STEP 4: Run the LangGraph pipeline
+            result_state = graph.invoke(parsed_state)
+
+            print("=" * 50)
+            print(f"LangGraph state : {result_state}")
+            print("=" * 50)
+
+            # ✅ STEP 5: Extract results with proper fallbacks
+            name = result_state.get("name") #or f"Candidate_{i+1}"
+            email = result_state.get("email") #or sender
+            mobile = result_state.get("mobile") #or "Not available"
+
+            print("=" * 50)
+            print(f"Extract results : {name},{email},{mobile}")
+            print("=" * 50)
+
             # Determine feedback based on score
             score = result_state.get("score", 0)
             feedback = "Accept" if score >= 6.5 else "Reject"
 
-            # Skip if filtered by experience
             if result_state.get("experience_filtered", False):
                 feedback = "Rejected (Experience)"
                 st.info(f"📋 {name}: Filtered out due to insufficient experience")
 
+            analysis = result_state.get("analysis", {})
+
             # Collect results
             result_data = {
                 "name": name,
-                "email": sender,
+                "email": email,
                 "score": score,
                 "feedback": feedback,
-                "mobile": result_state.get("extract_mobile", "Not available"),
+                "mobile": mobile,
                 "resume_path": path,
                 "filename": filename,
                 "job_type": result_state.get("job_type", "Unknown"),
@@ -529,12 +128,18 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
                 "embedding_score": result_state.get("embedding_score", 0),
                 "resume_id": f"resume_{i}",
             }
+            print("=" * 50)
+            print(f"✅ Processed : {result_data}")
+            print("=" * 50)
 
             all_results.append(result_data)
             st.success(f"✅ Processed {name} - Score: {score}")
 
         except Exception as e:
             st.error(f"❌ Error processing {filename}: {str(e)}")
+            # Print full traceback for debugging
+            import traceback
+            st.error(traceback.format_exc())
             continue
 
     return all_results
@@ -598,7 +203,12 @@ def get_score_class(score):
     else:
         return "score-low"
 
+
 def display_ranked_candidates(processed_resumes):
+    print("=" * 50)
+    print(f"--processed_resumes : {processed_resumes}")
+    print("=" * 50)
+    
     """
     Display ranked candidates with detailed information
     """
@@ -635,23 +245,36 @@ def display_ranked_candidates(processed_resumes):
         top_score = max(r.get("score", 0) for r in ranked_resumes) if ranked_resumes else 0
         st.metric("Top Score", f"{top_score:.2f}")
 
+    print("=" * 50)
+    print(f"--Ranked_resumes : {ranked_resumes}")
+    print("=" * 50)
+    
     # Display candidates
     for i, res in enumerate(ranked_resumes[:10], 1):  # Show top 10
+        
+        # Debug print
+        print("=" * 50)
+        print(f"Candidate {i} data:", res)
+        print("=" * 50)
+        
         score = res.get('score', 0)
         score_class = get_score_class(score)
         
-        with st.expander(f"🏅 Rank {i}: {res.get('name','Unknown')} (Score: {score})"):
+        # Better handling of missing name
+        candidate_name = res.get('name', 'name') #or f"Temp_Candidate_{i}"
+        if candidate_name == "None" or candidate_name is None:
+            candidate_name = f"Temp_Candidate_{i}"
+        
+        with st.expander(f"🏅 Rank {i}: {candidate_name} (Score: {score})"):
             col1, col2 = st.columns(2)
             
             with col1:
-                print(".................................*********************************************")
-                print(res.keys())
-
                 st.markdown("### 📋 Basic Info")
-                st.markdown(f"**Name:** {res.get('name','Unknown')}")
-                st.markdown(f"**Email:** {res.get('email','N/A')}")
-                st.markdown(f"**Mobile:** {res.get('mobile','N/A')}")
-                st.markdown(f"**Job Type:** {res.get('job_type','Unknown')}")
+                st.markdown(f"**Name:** {res.get('name', 'N/A') or 'N/A'}")
+                st.markdown(f"**Email:** {res.get('email', 'N/A') or 'N/A'}")
+                st.markdown(f"**Mobile:** {res.get('mobile', 'N/A') or 'N/A'}")
+                st.markdown(f"**Job Type:** {res.get('job_type', 'Unknown') or 'Unknown'}")
+                # st.markdown(f"**Filename:** {res.get('filename', 'N/A')}")
                 
                 # Feedback with color coding
                 feedback = res.get('feedback', 'No feedback')
@@ -664,14 +287,12 @@ def display_ranked_candidates(processed_resumes):
                 st.markdown("### 📊 Scores & Analysis")
                 st.markdown(f"**Final Score:** <span class='{score_class}'>{score}</span>", unsafe_allow_html=True)
                 st.markdown(f"**Similarity Score:** {res.get('similarity_score', 'N/A')}")
-                # st.markdown(f"**LLM Score:** {res.get('llm_score', 'N/A')}")
-                # st.markdown(f"**Embedding Score:** {res.get('embedding_score', 'N/A')}")
                 st.markdown(f"**Education:** {res.get('education', 'Unknown')}")
                 st.markdown(f"**Experience:** {res.get('experience', '0')} years")
             
             # Skills section
             skills = res.get('skills', [])
-            if skills:
+            if skills and isinstance(skills, list):
                 st.markdown("### 🔧 Skills")
                 # Display skills as tags
                 skills_html = " ".join([f"<span style='background:#e1f5fe; padding:4px 8px; border-radius:12px; margin:2px; display:inline-block; font-size:12px;'>{skill}</span>" for skill in skills[:10]])
@@ -680,7 +301,11 @@ def display_ranked_candidates(processed_resumes):
             # Resume link
             resume_path = res.get("resume_path") or res.get("filepath")
             if resume_path and os.path.exists(resume_path):
-                st.markdown(f"📄 **Resume:** [Download]({resume_path})")
+                st.markdown(f"📄 **Resume:** [View File]({resume_path})")
+            
+            # Debug section (remove in production)
+            with st.expander("🐛 Debug Info"):
+                st.json(res)
 
 def run_streamlit():
     load_custom_css()
@@ -888,16 +513,7 @@ def run_streamlit():
         if st.session_state.get("resume_items"):
             st.markdown(f"**Workspace:** {len(st.session_state['resume_items'])} resumes loaded")
 
-            # with st.expander("📋 View loaded resumes"):
-            #     for i, resume_path in enumerate(st.session_state["resume_items"], start=1):
-            #         filename = os.path.basename(resume_path)  # Safe for any OS
-            #         sender = st.session_state.get("sender_email", "Unknown")
-
-            #         # Make a clickable link to open the file locally
-            #         st.markdown(
-            #             f"{i}. [{filename}](file:///{resume_path}) (from: {sender})",
-            #             unsafe_allow_html=True
-            #         )
+            
             with st.expander("📋 View loaded resumes"):
                 for i, resume_item in enumerate(st.session_state["resume_items"], start=1):
                     
@@ -948,6 +564,9 @@ def run_streamlit():
                                 st.session_state["jd_text"],
                                 source_type
                             )
+                            print("=" * 50)
+                            print(f"--Results : {results}")
+                            print("=" * 50)
                             
                             st.session_state["results"] = results
                             st.session_state["processing_complete"] = True
