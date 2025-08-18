@@ -14,6 +14,7 @@ class ResumeState(TypedDict):
     score: float
     llm_score:float
     embedding_score:float
+    address:str
 
 
 # class ResumeState(TypedDict):

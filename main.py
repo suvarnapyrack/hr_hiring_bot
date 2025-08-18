@@ -8,7 +8,7 @@ import json
 
 # Import your updated functions
 #from app import create_resume_processing_graph
-from app.utils import  rank_top_candidates, fetch_from_gmail,fetch_from_drive
+from app.utils import  rank_top_candidates, fetch_from_gmail,fetch_from_drive 
 from app.utils import extract_text_from_pdf, parse_resume
 from app.langgraph_flow import graph
 
@@ -68,7 +68,8 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
                 "analysis": {},
                 "score": 0,
                 "experience_filtered": False,
-                "rank": 0
+                "rank": 0,
+                "address":""
             }
 
             # ✅ STEP 3: Parse the resume to extract name, email, mobile
@@ -117,6 +118,7 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
                 "score": score,
                 "feedback": feedback,
                 "mobile": mobile,
+                "address":address,
                 "resume_path": path,
                 "filename": filename,
                 "job_type": result_state.get("job_type", "Unknown"),
@@ -274,6 +276,7 @@ def display_ranked_candidates(processed_resumes):
                 st.markdown(f"**Email:** {res.get('email', 'N/A') or 'N/A'}")
                 st.markdown(f"**Mobile:** {res.get('mobile', 'N/A') or 'N/A'}")
                 st.markdown(f"**Job Type:** {res.get('job_type', 'Unknown') or 'Unknown'}")
+                st.markdown(f"**Job Type:** {res.get('address', 'Unknown') or 'Unknown'}")
                 # st.markdown(f"**Filename:** {res.get('filename', 'N/A')}")
                 
                 # Feedback with color coding
