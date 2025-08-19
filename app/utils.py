@@ -15,7 +15,7 @@ from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 import pandas as pd
 import gspread
-
+import requests
 from google.oauth2 import service_account
 import requests
 from langchain.embeddings import HuggingFaceEmbeddings
@@ -165,13 +165,17 @@ def fetch_from_drive(state=None):
 
         # ✅ Read Google Sheet
         gc = gspread.authorize(creds)
-        SHEET_ID = '10kEyz4UgkQgsxYLHyUUro3uj4Qgk63aQqlDjhiXdqLw'
+        SHEET_ID = '12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw'
         sh = gc.open_by_key(SHEET_ID)
+        print(f"sheeet {sh}")
         ws = sh.sheet1
+        print(f"sheeet 1 {sh}")
         rows = ws.get_all_records()
         df = pd.DataFrame(rows)
+        print(f"data fareme {df.columns}")
+        print({SHEET_ID})
 
-        resume_links = df["resume file"].dropna().tolist()
+        resume_links = df["Resume"].dropna().tolist()
         print("📄 Resume links found:", resume_links)
 
         # ✅ Prepare Drive API
@@ -191,6 +195,7 @@ def fetch_from_drive(state=None):
                     fileId=file_id,
                     fields="name,mimeType"
                 ).execute()
+                print({meta})
 
                 orig_name = meta.get("name", f"{file_id}.pdf")  # fallback if no name
                 mime_type = meta.get("mimeType")
@@ -281,15 +286,44 @@ def extract_text_from_pdf(filepath: str) -> str:
 
 
 
+
+
+
+
+
+
+
+
+import os
+import re
+import json
+import pdfplumber
+from typing import Dict
+from langchain_groq import ChatGroq
+
+def extract_text_from_pdf(filepath: str) -> str:
+    """
+    Extracts text from a PDF file using pdfplumber.
+    """
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File not found: {filepath}")
+
+    with pdfplumber.open(filepath) as pdf:
+        text = "\n".join(
+            [page.extract_text() for page in pdf.pages if page.extract_text()]
+        )
+    return text
+
 def parse_resume(state: Dict) -> Dict:
     """
-    Extracts and cleans text from a resume PDF, and retrieves the mobile number, email, and name.
+    Extracts and cleans text from a resume PDF, and uses Groq Llama3 to extract candidate information.
+    Falls back to regex-based extraction if LLM fails.
     """
     resume_path = state.get("resume")
 
     if not resume_path or not os.path.exists(resume_path):
         print("❌ Resume file not found")
-        return {**state, "resume_text": "", "mobile": "Not found", "email": "Not found", "name": "Not found"}
+        return {**state, "resume_text": "", "mobile": "Not found", "email": "Not found", "name": "Not found", "address": "Not found"}
 
     def clean_text(text: str) -> str:
         # Clean each line separately to preserve line structure
@@ -305,180 +339,153 @@ def parse_resume(state: Dict) -> Dict:
                 cleaned_lines.append(line)
         
         return '\n'.join(cleaned_lines)
-    def extract_email(text: str) -> str:
-        """
-        Extract an email address from text, handling:
-        - Emails with/without spaces
-        - Flexible formats
-        - Reconstruction from '@' symbol
-        - Validation of the final email
-        """
 
-        # First, try standard email patterns (no spaces) - must start with letter
+    def extract_info_with_groq_llm(text: str) -> Dict[str, str]:
+        """
+        Use Groq Llama3 to extract candidate information from resume text.
+        Returns a dictionary with name, email, mobile, and address.
+        """
+        
+        # Create a structured prompt for the LLM
+        extraction_prompt = f"""
+Please extract the following information from this resume text. If any information is not found, return "Not found" for that field.
+
+Resume Text:
+{text[:3000]}  # Limit text to avoid token limits
+
+Please extract and return ONLY the following information in this exact JSON format:
+{{
+    "name": "candidate's full name",
+    "email": "email address", 
+    "mobile": "phone/mobile number (preferably in +91 format if Indian number)",
+    "address": "complete address or location"
+}}
+
+Rules:
+- For name: Extract the candidate's full name (usually at the top of resume)
+- For email: Extract valid email address
+- For mobile: Extract phone number, format as +91 XXXXXXXXXX if Indian number  
+- For address: Extract complete address or at least city/location
+- Return "Not found" if information is not available
+- Return only the JSON, no other text
+"""
+
+        try:
+            print("🤖 Using Groq Llama3 to extract candidate information...")
+            
+            # Initialize Groq LLM (using your existing setup)
+            llm = ChatGroq(
+                model="llama3-8b-8192", 
+                api_key=os.getenv("GROQ_API_KEY"),
+                temperature=0  # For consistent extraction
+            )
+            
+            # Call the LLM
+            response = llm.invoke(extraction_prompt)
+            llm_response = response.content
+            
+            print(f"🔍 LLM Raw Response: {llm_response[:200]}...")  # Debug output
+            
+            # Parse the JSON response
+            try:
+                # Clean the response to extract JSON
+                llm_response = llm_response.strip()
+                
+                # Find JSON in the response
+                json_start = llm_response.find('{')
+                json_end = llm_response.rfind('}') + 1
+                
+                if json_start != -1 and json_end != 0:
+                    json_str = llm_response[json_start:json_end]
+                    extracted_info = json.loads(json_str)
+                else:
+                    raise json.JSONDecodeError("No JSON found", llm_response, 0)
+                    
+            except json.JSONDecodeError as e:
+                print(f"⚠️  JSON parsing failed: {e}")
+                print(f"⚠️  Raw LLM response: {llm_response}")
+                
+                # If LLM doesn't return valid JSON, try to extract from text
+                extracted_info = {
+                    "name": "Not found",
+                    "email": "Not found",
+                    "mobile": "Not found", 
+                    "address": "Not found"
+                }
+                
+                # Basic fallback parsing if JSON fails
+                lines = llm_response.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if any(keyword in line.lower() for keyword in ['name:', 'name":', '"name"']):
+                        # Extract value after colon
+                        if ':' in line:
+                            value = line.split(':')[1].strip().strip('"\'').strip(',')
+                            if value and value.lower() not in ['not found', '', 'none', 'null', 'n/a']:
+                                extracted_info['name'] = value
+                    
+                    elif any(keyword in line.lower() for keyword in ['email:', 'email":', '"email"']):
+                        if ':' in line:
+                            value = line.split(':')[1].strip().strip('"\'').strip(',')
+                            if value and value.lower() not in ['not found', '', 'none', 'null', 'n/a']:
+                                extracted_info['email'] = value
+                    
+                    elif any(keyword in line.lower() for keyword in ['mobile:', 'mobile":', '"mobile"', 'phone:']):
+                        if ':' in line:
+                            value = line.split(':')[1].strip().strip('"\'').strip(',')
+                            if value and value.lower() not in ['not found', '', 'none', 'null', 'n/a']:
+                                extracted_info['mobile'] = value
+                    
+                    elif any(keyword in line.lower() for keyword in ['address:', 'address":', '"address"']):
+                        if ':' in line:
+                            value = line.split(':')[1].strip().strip('"\'').strip(',')
+                            if value and value.lower() not in ['not found', '', 'none', 'null', 'n/a']:
+                                extracted_info['address'] = value
+            
+            # Validate and clean extracted information
+            for key, value in extracted_info.items():
+                if isinstance(value, str):
+                    value = value.strip().strip('"\'').strip(',')
+                    if value.lower() in ['not found', '', 'none', 'null', 'n/a']:
+                        extracted_info[key] = "Not found"
+                    else:
+                        extracted_info[key] = value
+                else:
+                    extracted_info[key] = "Not found"
+            
+            print(f"✅ Groq LLM extraction completed:")
+            print(f"   Name: {extracted_info.get('name', 'Not found')}")
+            print(f"   Email: {extracted_info.get('email', 'Not found')}")
+            print(f"   Mobile: {extracted_info.get('mobile', 'Not found')}")
+            print(f"   Address: {extracted_info.get('address', 'Not found')}")
+            
+            return extracted_info
+            
+        except Exception as e:
+            print(f"❌ Error calling Groq LLM: {e}")
+            # Return default values if LLM call fails
+            return {
+                "name": "Not found",
+                "email": "Not found",
+                "mobile": "Not found",
+                "address": "Not found"
+            }
+
+    # Fallback regex functions (your original functions for backup)
+    def extract_email_regex(text: str) -> str:
+        """Fallback email extraction using regex"""
         standard_email_pattern = r'\b[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
         standard_matches = re.findall(standard_email_pattern, text)
         for email in standard_matches:
             if re.match(r'^[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
                 return email
-
-        # Remove common prefixes that interfere with email extraction
-        cleaned_text = re.sub(r'\b(India|USA|UK|Canada|Mumbai|Delhi|Bangalore|Pune|Hyderabad|Chennai|Kolkata|Ahmedabad|Indore)\s*[-\s]*', '', text, flags=re.IGNORECASE)
-        cleaned_text = re.sub(r'\b\d{5,6}\s*[-\s]*', '', cleaned_text)  # Pin codes
-        cleaned_text = re.sub(r'\b\d{10}\s*[-\s]*', '', cleaned_text)   # Phone numbers
-        
-        # Try standard pattern on cleaned text
-        standard_matches = re.findall(standard_email_pattern, cleaned_text)
-        for email in standard_matches:
-            if re.match(r'^[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
-                return email
-
-        # Find emails with spaces using domain pattern
-        domain_pattern = r'@[\s]*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b'
-        domain_matches = list(re.finditer(domain_pattern, text))
-        
-        for domain_match in domain_matches:
-            domain = re.sub(r'\s+', '', domain_match.group(1))
-            at_pos = domain_match.start()
-
-            # Look backwards from @ to find username parts - expand search range
-            start_pos = max(0, at_pos - 120)
-            before_at = text[start_pos:at_pos]
-
-            # Extract username parts that start with letter and look email-like
-            username_patterns = [
-                r'([a-zA-Z][a-zA-Z0-9._%+-]*[\s]+[a-zA-Z0-9._%+-]+)[\s]*$',  # Two parts with space (priority)
-                r'([a-zA-Z][a-zA-Z0-9._%+-]*[\s]*[a-zA-Z0-9._%+-]*)[\s]*$',  # Must start with letter
-                r'([a-zA-Z][a-zA-Z0-9._%+-]*)[\s]*$',  # Single part starting with letter
-            ]
-
-            for pattern in username_patterns:
-                username_match = re.search(pattern, before_at)
-                if username_match:
-                    potential_username = username_match.group(1)
-                    clean_username = re.sub(r'\s+', '', potential_username)
-                    
-                    # Filter out invalid usernames
-                    if (len(clean_username) >= 2 and 
-                        clean_username[0].isalpha() and  # Must start with letter
-                        not clean_username.isdigit() and  # Not all numbers
-                        not re.match(r'^(India|Indore|\d{5,})', clean_username, re.IGNORECASE)):  # Not location/number
-                        
-                        email = clean_username + "@" + domain
-                        if re.match(r'^[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
-                            return email
-
-        # Try flexible spacing patterns
-        flexible_patterns = [
-            r'([a-zA-Z][a-zA-Z0-9._%+-]*[\s]+[a-zA-Z0-9._%+-]+)[\s]*@[\s]*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',  # Spaced username
-            r'([a-zA-Z][a-zA-Z0-9._%+-]*)[\s]+([a-zA-Z0-9._%+-]+)[\s]*@[\s]*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
-            r'([a-zA-Z][a-zA-Z0-9._%+-]*)[\s]*@[\s]*([a-zA-Z0-9.-]+)[\s]*\.[\s]*([a-zA-Z]{2,})',
-        ]
-        
-        for pattern in flexible_patterns:
-            matches = re.finditer(pattern, text, re.IGNORECASE)
-            for match in matches:
-                groups = match.groups()
-                if len(groups) == 2:  # Pattern 1: spaced username
-                    email = re.sub(r'\s+', '', groups[0]) + "@" + groups[1]
-                elif len(groups) == 3 and '.' in groups[2]:
-                    email = groups[0] + groups[1] + "@" + groups[2]
-                elif len(groups) == 3:
-                    email = groups[0] + "@" + groups[1] + "." + groups[2]
-                else:
-                    continue
-                    
-                email = re.sub(r'\s+', '', email)
-                # Check if username is valid
-                username = email.split('@')[0]
-                if (len(username) >= 2 and 
-                    username[0].isalpha() and 
-                    not username.isdigit() and 
-                    not re.match(r'^(India|Indore|\d{5,})', username, re.IGNORECASE) and
-                    re.match(r'^[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email)):
-                    return email
-
-        # Last resort: reconstruct around '@' with better filtering
-        at_positions = [m.start() for m in re.finditer(r'@', text)]
-        for at_pos in at_positions:
-            start_search = max(0, at_pos - 40)
-            end_search = min(len(text), at_pos + 40)
-            before_at = text[start_search:at_pos]
-            after_at = text[at_pos+1:end_search]
-            
-            # Get username parts (must start with letter)
-            username_parts = re.findall(r'[a-zA-Z][a-zA-Z0-9._%+-]*', before_at)
-            if not username_parts:
-                continue
-                
-            # Take the last valid username part
-            username = username_parts[-1]
-            
-            # Filter out invalid usernames
-            if (len(username) >= 2 and 
-                username[0].isalpha() and 
-                not username.isdigit() and 
-                not re.match(r'^(India|Indore|\d{5,})', username, re.IGNORECASE)):
-                
-                # Get domain parts
-                domain_parts = re.findall(r'[a-zA-Z0-9.-]+', after_at)
-                if not domain_parts or '.' not in domain_parts[0]:
-                    continue
-                domain = domain_parts[0]
-                
-                email = username + "@" + domain
-                if re.match(r'^[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
-                    return email
-
-                return "Not found"
-    
-    def extract_address(text: str) -> str:
-        """
-        Extract postal address from resume text.
-        Handles variations like:
-        - "Address: ..."
-        - Multi-line addresses
-        - Common keywords (Street, Road, Lane, City, State, Zip)
-        """
-
-        # Normalize spacing
-        text = re.sub(r'\s+', ' ', text)
-
-        # Common address keywords
-        keywords = [
-            r'address[:\-]?\s*',
-            r'location[:\-]?\s*',
-            r'residence[:\-]?\s*',
-            r'permanent\s+address[:\-]?\s*',
-            r'present\s+address[:\-]?\s*',
-        ]
-
-        # Pattern: keyword followed by text until a line break or 200 chars max
-        for kw in keywords:
-            match = re.search(kw + r'([A-Za-z0-9\s,.\-/#]+)', text, re.IGNORECASE)
-            if match:
-                candidate = match.group(1).strip()
-                # Stop at phone/email if they appear after
-                candidate = re.split(r'(?:email|e-mail|phone|mobile|contact)', candidate, flags=re.IGNORECASE)[0]
-                return candidate.strip(" ,.-")
-
-        # Fallback: try to detect generic address-like patterns
-        fallback_pattern = (
-            r'([0-9]{1,5}\s+[A-Za-z0-9\s,.\-/#]+(?:street|st\.|road|rd\.|lane|ln\.|avenue|ave\.|city|state|pincode|zip)[A-Za-z0-9\s,.\-/#]*)'
-        )
-        match = re.search(fallback_pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1).strip(" ,.-")
-
         return "Not found"
 
-
-    def extract_mobile(text: str) -> str:
-        """Improved mobile extraction with more patterns"""
-        # Clean text for better matching
+    def extract_mobile_regex(text: str) -> str:
+        """Improved fallback mobile extraction using regex"""
         text = re.sub(r'\s+', ' ', text)
-        
         patterns = [
-            # Match +91 876 7357785 format (with spaces)
+            # Match +91 876 7357785 format (with spaces) 
             r"\+91\s*([6-9]\d{2})\s*([0-9]\d{2})\s*([0-9]\d{2}\d{1})",
             # Match +91 8767357785 format (no spaces)
             r"\+91\s*([6-9]\d{9})",
@@ -488,10 +495,6 @@ def parse_resume(state: Dict) -> Dict:
             r"\b([6-9]\d{9})\b",
             # Match with Phone/Mobile labels
             r"(?:Phone|Mobile|Contact|Ph)[\s:]*\+?91[\s-]*([6-9]\d{9})",
-            # Match with separators like spaces, dashes, dots
-            r"\+91[\s\.-]*([6-9]\d{2})[\s\.-]*(\d{3})[\s\.-]*(\d{4})",
-            # Match format: +91 876 735 7785
-            r"\+91\s+(\d{3})\s+(\d{3})\s+(\d{4})",
         ]
         
         for pattern in patterns:
@@ -510,354 +513,136 @@ def parse_resume(state: Dict) -> Dict:
                 clean_number = re.sub(r"[^\d]", "", number)
                 if len(clean_number) == 10 and clean_number[0] in "6789":
                     return f"+91 {clean_number}"
-                    
         return "Not found"
-        
-    def extract_name(text: str) -> str:
+
+    def extract_name_regex(text: str) -> str:
+        """Fallback name extraction using regex"""
         lines = text.strip().split("\n")
         lines = [line.strip() for line in lines if line.strip()]
         
-        # Enhanced exclusion patterns
         exclusion_patterns = [
-            r"phone|email|linkedin|github|address|mobile|contact|cell",
-            r"@|\.com|\.in|\.org|\.net|\.edu|www\.|http|mailto:",
-            r"^\+?\d+|phone:\s*\+?\d+",
-            r"work experience|experience|education|skills|projects|objective|summary",
-            r"resume|cv|curriculum vitae|profile|bio|about",
-            r"data scien|engineer|intern|analyst|developer|programmer|manager|consultant",
-            r"technologies|pvt|ltd|company|corp|inc|llc|organization",
-            r"pune|mumbai|delhi|bangalore|chennai|hyderabad|kolkata|ahmedabad",
-            r"jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february",
-            r"202\d|201\d|19\d\d",
-            r"street|road|avenue|lane|city|state|zip|pincode|pin",
-            r"bachelor|master|phd|btech|mtech|bsc|msc|degree|university|college",
-            r"python|java|javascript|html|css|sql|react|node|angular",
-            r"certification|certified|course|training|workshop"
+            r"phone|email|linkedin|github|address|mobile|contact",
+            r"@|\.com|\.in|\.org|www\.|http",
+            r"experience|education|skills|projects|objective|summary",
+            r"resume|cv|profile|bio"
         ]
         
-        # Collect all name candidates with scoring
-        all_candidates = []
-        
-        # Search through first 15 lines instead of 10
-        for i, line in enumerate(lines[:15]):
+        for i, line in enumerate(lines[:10]):
             if not line:
                 continue
                 
-            # Check if line should be excluded
             line_lower = line.lower()
-            should_exclude = False
-            for pattern in exclusion_patterns:
-                if re.search(pattern, line_lower):
-                    should_exclude = True
-                    break
+            should_exclude = any(re.search(pattern, line_lower) for pattern in exclusion_patterns)
             
             if should_exclude:
                 continue
             
-            # Clean line and extract words
             clean_line = re.sub(r'[^\w\s\'-]', ' ', line)
-            clean_line = re.sub(r'\s+', ' ', clean_line).strip()
             words = clean_line.split()
             
-            # Strategy 1: Look for consecutive capitalized words
-            caps_sequence = []
-            for word in words:
-                if len(word) >= 2 and word.isalpha() and word.lower() not in ['and', 'the', 'of', 'in', 'at', 'to', 'for', 'with', 'by']:
-                    if word.isupper() or word.istitle():
-                        caps_sequence.append(word.title())
-                    else:
-                        if len(caps_sequence) >= 2:
-                            candidate = " ".join(caps_sequence)
-                            score = 100 - i * 5
-                            if len(caps_sequence) == 2:
-                                score += 10
-                            elif len(caps_sequence) == 3:
-                                score += 5
-                            all_candidates.append((candidate, score, i))
-                        caps_sequence = []
-                else:
-                    if len(caps_sequence) >= 2:
-                        candidate = " ".join(caps_sequence)
-                        score = 100 - i * 5
-                        if len(caps_sequence) == 2:
-                            score += 10
-                        elif len(caps_sequence) == 3:
-                            score += 5
-                        all_candidates.append((candidate, score, i))
-                    caps_sequence = []
-            
-            # Don't forget the last sequence
-            if len(caps_sequence) >= 2:
-                candidate = " ".join(caps_sequence)
-                score = 100 - i * 5
-                if len(caps_sequence) == 2:
-                    score += 10
-                elif len(caps_sequence) == 3:
-                    score += 5
-                all_candidates.append((candidate, score, i))
-            
-            # Strategy 2: Look for title case words at the beginning of line
             title_words = []
             for word in words:
-                if len(word) >= 2 and word.isalpha() and (word.istitle() or word.isupper()) and word.lower() not in ['and', 'the', 'of', 'in', 'at', 'to', 'for', 'with', 'by']:
+                if (len(word) >= 2 and word.isalpha() and 
+                    (word.istitle() or word.isupper()) and 
+                    word.lower() not in ['and', 'the', 'of', 'in', 'at']):
                     title_words.append(word.title())
                 else:
                     break
             
             if len(title_words) >= 2:
-                candidate = " ".join(title_words[:4])  # Limit to 4 words max
-                score = 95 - i * 5  # Slightly lower score than caps sequence
-                if len(title_words) == 2:
-                    score += 8
-                elif len(title_words) == 3:
-                    score += 4
-                all_candidates.append((candidate, score, i))
+                return " ".join(title_words[:3])
         
-        # Filter and sort candidates
-        valid_candidates = []
-        for candidate, score, line_num in all_candidates:
-            words = candidate.split()
-            if 2 <= len(words) <= 4 and all(len(w) >= 2 for w in words):
-                valid_candidates.append((candidate, score, line_num))
+        return "Not found"
+
+    def extract_address_regex(text: str) -> str:
+        """Fallback address extraction using regex"""
+        text = re.sub(r'\s+', ' ', text)
         
-        # Sort by score (highest first)
-        valid_candidates.sort(key=lambda x: x[1], reverse=True)
+        # Look for city names in the text
+        indian_cities = ['pune', 'mumbai', 'delhi', 'bangalore', 'chennai', 'hyderabad', 'kolkata', 'ahmedabad', 'indore']
+        for city in indian_cities:
+            if city in text.lower():
+                return city.title()
         
-        # Return the best candidate
-        if valid_candidates:
-            return valid_candidates[0][0]
+        keywords = [
+            r'address[:\-]?\s*',
+            r'location[:\-]?\s*', 
+            r'residence[:\-]?\s*',
+        ]
         
-        # Fallback 1: Look for any reasonable text in first few lines
-        for i, line in enumerate(lines[:5]):
-            if not line:
-                continue
-                
-            # Check exclusion
-            line_lower = line.lower()
-            should_exclude = False
-            for pattern in exclusion_patterns:
-                if re.search(pattern, line_lower):
-                    should_exclude = True
-                    break
-            
-            if should_exclude:
-                continue
-                
-            # Clean and extract first few words
-            clean_line = re.sub(r'[^\w\s]', ' ', line)
-            clean_line = re.sub(r'\s+', ' ', clean_line).strip()
-            words = clean_line.split()
-            
-            # Take first 2-3 alphabetic words
-            name_words = []
-            for word in words[:3]:
-                if word.isalpha() and len(word) >= 2:
-                    name_words.append(word.title())
-                else:
-                    break
-                    
-            if len(name_words) >= 2:
-                return " ".join(name_words)
-        
-        # Fallback 2: Look for any line with mixed case letters
-        for line in lines[:10]:
-            if not line:
-                continue
-                
-            # Check exclusion
-            line_lower = line.lower()
-            should_exclude = False
-            for pattern in exclusion_patterns:
-                if re.search(pattern, line_lower):
-                    should_exclude = True
-                    break
-            
-            if should_exclude:
-                continue
-                
-            # Look for lines with both uppercase and lowercase letters
-            if any(c.isupper() for c in line) and any(c.islower() for c in line):
-                words = re.findall(r'[A-Za-z]{2,}', line)
-                if len(words) >= 2:
-                    return " ".join(words[:3]).title()
+        for kw in keywords:
+            match = re.search(kw + r'([A-Za-z0-9\s,.\-/#]+)', text, re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip()
+                candidate = re.split(r'(?:email|phone|mobile|contact)', candidate, flags=re.IGNORECASE)[0]
+                return candidate.strip(" ,.-")
         
         return "Not found"
 
     try:
+        # Extract text from PDF
         raw_text = extract_text_from_pdf(resume_path)
         cleaned_text = clean_text(raw_text)
 
-        # Use raw text for pattern matching to preserve formatting
-        mobile = extract_mobile(raw_text)
-        email = extract_email(raw_text)  # Also use raw text for better email detection
-        name = extract_name(raw_text)
-        address=extract_address(raw_text)
-
         print(f"✅ Parsed resume text (first 300 chars):\n{cleaned_text[:300]}")
-        print(f"✅ Raw text sample for debugging:\n{raw_text[:500]}")  # Debug raw text
-        print(f"✅ Extracted mobile: {mobile}")
-        print(f"✅ Extracted email: {email}")
-        print(f"✅ Extracted name: {name}")
-        print(f"✅ Extracted Address :{address}")
 
-        return {**state, "resume_text": cleaned_text, "mobile": mobile, "email": email, "name": name,"address": address}
+        # Primary: Use Groq LLM to extract information
+        extracted_info = extract_info_with_groq_llm(raw_text)
+
+        # Extract individual fields
+        name = extracted_info.get("name", "Not found")
+        email = extracted_info.get("email", "Not found") 
+        mobile = extracted_info.get("mobile", "Not found")
+        address = extracted_info.get("address", "Not found")
+
+        # Fallback: Use regex if LLM extraction failed for any field
+        print("🔄 Applying fallback extraction for missing information...")
+        
+        if name == "Not found":
+            print("   Using regex fallback for name...")
+            name = extract_name_regex(raw_text)
+            
+        if email == "Not found":
+            print("   Using regex fallback for email...")
+            email = extract_email_regex(raw_text)
+            
+        if mobile == "Not found":
+            print("   Using regex fallback for mobile...")
+            mobile = extract_mobile_regex(raw_text)
+            
+        if address == "Not found":
+            print("   Using regex fallback for address...")
+            address = extract_address_regex(raw_text)
+
+        print(f"✅ Final extracted information:")
+        print(f"   Name: {name}")
+        print(f"   Email: {email}")
+        print(f"   Mobile: {mobile}")
+        print(f"   Address: {address}")
+
+        return {
+            **state, 
+            "resume_text": cleaned_text, 
+            "mobile": mobile, 
+            "email": email, 
+            "name": name,
+            "address": address
+        }
 
     except Exception as e:
         print(f"❌ Error parsing resume: {e}")
         import traceback
         traceback.print_exc()
-        return {**state, "resume_text": "", "mobile": "Not found", "email": "Not found", "name": "Not found"}
+        return {
+            **state, 
+            "resume_text": "", 
+            "mobile": "Not found", 
+            "email": "Not found", 
+            "name": "Not found",
+            "address": "Not found"
+        }
 ###############################################################################################################################################################################    
-# def parse_resume(state: dict) -> dict:
-#     import re
-    
-#     # 1️⃣ Extract text
-#     raw_text = extract_text_from_pdf(state["resume_path"])
-#     print("\n=== RAW TEXT (first 300 chars) ===")
-#     print(raw_text[:300], "\n")
 
-#     # 2️⃣ Clean text
-#     cleaned_text = clean_text(raw_text)
-#     print("\n=== CLEANED TEXT (first 300 chars) ===")
-#     print(cleaned_text[:300], "\n")
-
-#     # 3️⃣ Extract entities
-#     mobile = extract_mobile(cleaned_text)
-#     email = extract_email(cleaned_text)
-#     name = extract_name(cleaned_text)
-
-#     print(f"[DEBUG] Mobile Extracted: {mobile}")
-#     print(f"[DEBUG] Email Extracted: {email}")
-#     print(f"[DEBUG] Name Extracted: {name}")
-
-#     # 4️⃣ Store results in state
-#     state["mobile"] = mobile
-#     state["email"] = email
-#     state["name"] = name
-
-#     return state
-
-# def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
-#     """
-#     Extract skills, education, and experience from resume
-#     """
-#     try:
-        
-#         prompt = PromptTemplate.from_template("""
-# From the resume text below, extract the following and return ONLY valid JSON (no explanation or formatting):
-# - Top 10 relevant skills (as a list of strings)
-# - Education level (as a single string)
-# -A string representing the total years of professional work experience.Only count if explicit work experience is mentioned in a particular section (e.g., "2 years", "3.5 years", "Worked from 2019 to 2021").If the candidate is a fresher or no experience is mentioned, return "0".
-# Resume:
-# {resume}
-
-# Respond ONLY in this JSON format:
-# {{
-#   "skills": ["..."],
-#   "education": "...",
-#   "experience": "..."
-# }}""")
-
-#         chain = prompt | llm
-#         response = chain.invoke({"resume": state.get("resume_text", "")})
-        
-#         print("✅ LLM raw response:\n", response.content)
-
-#         try:
-#             analysis_dict = json.loads(response.content)
-#         except json.JSONDecodeError:
-#             try:
-#                 import ast
-#                 analysis_dict = ast.literal_eval(response.content)
-#             except Exception:
-#                 analysis_dict = {
-#                     "skills": [],
-#                     "education": "Unknown",
-#                     "experience": "0"
-#                 }
-
-#         print("✅ Final parsed analysis:\n", analysis_dict)
-#         return {**state, "analysis": analysis_dict}
-        
-#     except Exception as e:
-#         print(f"❌ Analysis failed: {e}")
-#         return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
-# def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
-#     """
-#     Extract skills, education, and experience from resume
-#     """
-#     import re, json, ast
-
-#     try:
-#         resume_text = state.get("resume_text", "")
-
-#         prompt = PromptTemplate.from_template("""
-# You are an information extraction system.  
-# Your task is to read the resume text and extract exactly this data:  
-# - Top 10 relevant skills (list of strings)  
-# - Education level (string)  
-# - total_experience_years: Total professional work experience in years (string, e.g., "2", "3.5", "0")
-
-# Rules for total_experience_years:
-# 1. Count ONLY if the resume explicitly states the duration in years/months or has start and end dates (e.g., "Aug 2024 - Dec 2024").
-# 2. If duration is in months, convert to years with one decimal place (e.g., "5 months" → "0.4").
-# 3. If multiple experiences are listed, sum them up.
-# 4. Do NOT infer or guess based on skills, job titles, or education.
-# 5. If no explicit duration is mentioned, return "0".
-# 6. Never round up — keep the exact lower bound.
-
-# You must respond with **only valid JSON**. No explanation. No extra words.  
-# If a field is missing in the resume, use defaults: [] for skills, "Unknown" for education, "0" for experience.  
-
-# Resume:
-# {resume}
-
-# JSON response format (strictly follow this):
-# {
-#   "skills": ["Python", "TensorFlow", "..."],
-#   "education": "Bachelor of Pharmacy",
-#   "experience": "0.8"
-# }
-# """)
-
-#         chain = prompt | llm
-#         response = chain.invoke({"resume": resume_text})
-#         raw_response = response.content.strip()
-#         print("✅ LLM raw response:\n", raw_response)
-
-#         # Clean up potential markdown wrappers
-#         raw_response = re.sub(r"```(json)?", "", raw_response).strip()
-
-#         # Extract JSON portion
-#         if "{" in raw_response and "}" in raw_response:
-#             json_str = raw_response[raw_response.find("{"): raw_response.rfind("}") + 1]
-#         else:
-#             json_str = raw_response
-
-#         # Parse JSON safely
-#         try:
-#             analysis_dict = json.loads(json_str)
-#         except json.JSONDecodeError:
-#             try:
-#                 analysis_dict = ast.literal_eval(json_str)
-#             except Exception:
-#                 analysis_dict = {
-#                     "skills": [],
-#                     "education": "Unknown",
-#                     "experience": "0"
-#                 }
-
-#         # Ensure keys exist
-#         analysis_dict.setdefault("skills", [])
-#         analysis_dict.setdefault("education", "Unknown")
-#         analysis_dict.setdefault("experience", "0")
-
-#         print("✅ Final parsed analysis:\n", analysis_dict)
-#         return {**state, "analysis": analysis_dict}
-
-#     except Exception as e:
-#         print(f"❌ Analysis failed: {e}")
-#         return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
 def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
     """
     Extract skills, education, and experience from resume
@@ -867,22 +652,49 @@ def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
     try:
         resume_text = state.get("resume_text", "")
 
-        prompt = PromptTemplate.from_template("""
-You are an information extraction system.  
-Your task is to read the resume text and extract exactly this data:  
-- Top 10 relevant skills (list of strings)  
-- Education level (string)  
-- total_experience_years: Total professional work experience in years (string, e.g., "2", "3.5", "0")
+        prompt =PromptTemplate.from_template("""
+You are an expert resume parser. Extract the following information from the resume text:
 
-Rules for total_experience_years:
-1. Count ONLY if the resume explicitly states the duration in years/months or has start and end dates (e.g., "Aug 2024 - Dec 2024").
-2. If duration is in months, convert to years with one decimal place (e.g., "5 months" → "0.4").
-3. If multiple experiences are listed, sum them up.
-4. Do NOT infer or guess based on skills, job titles, or education.
-5. If no explicit duration is mentioned, return "0".
-6. Never round up — keep the exact lower bound.
+SKILLS: List the top 10 most relevant technical and professional skills mentioned in the resume.
 
-IMPORTANT: Respond with ONLY valid JSON. No explanations, no additional text, no markdown.
+EDUCATION: Extract the HIGHEST degree/qualification from education section. Priority order:
+1. PhD/Doctorate
+2. Masters/M.Tech/MBA
+3. Bachelor's/B.Tech/B.E./B.Sc
+4. Diploma
+5. Certificate courses
+Format as: "Degree Field" (e.g., "B.Tech Computer Science", "Masters Data Science")
+
+EXPERIENCE: Calculate total work experience in years (include internships and full-time jobs).
+
+EXPERIENCE CALCULATION RULES:
+1. Count ALL work experience including: Full-time jobs, Internships, Part-time roles
+2. EXCLUDE: Academic projects, personal projects, training courses, education duration
+3. Parse date ranges carefully:
+   - "Feb-Sep 2024" = Feb to Sep = 7 months = 0.6 years
+   - "Jan 2022 - Dec 2024" = 3.0 years
+   - "Mar 2021 - Present" = calculate from March 2021 to current date
+4. Convert months to decimal accurately: 
+   - 6 months = 0.5 years, 7 months = 0.6 years, 8 months = 0.7 years
+   - 12 months = 1.0 year
+5. Sum all qualifying work experiences (jobs + internships)
+6. If no work experience found, return "0"
+
+INTERNSHIP HANDLING:
+- Internships COUNT as work experience
+- Include internship duration in total experience calculation
+
+DATE PARSING EXAMPLES:
+- "Feb-Sep 2024" (7 months internship) = 0.6 years experience
+- "Software Engineer Jan 2022 - Dec 2023" = 2.0 years
+- "Data Scientist Mar 2021 - Present" = calculate current duration
+- "Intern Jun-Dec 2023" (6 months) = 0.5 years experience
+
+IMPORTANT NOTES:
+- Count both internships and full-time jobs as work experience
+- Calculate experience based on actual date ranges
+- For education, always pick the highest degree mentioned
+- 7 months = 0.6 years (7/12 = 0.58 ≈ 0.6)
 
 Resume:
 {resume}

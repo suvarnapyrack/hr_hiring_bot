@@ -84,6 +84,8 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
             st.info(f"   - Name: {parsed_state.get('name', 'Not found')}")
             st.info(f"   - Email: {parsed_state.get('email', 'Not found')}")
             st.info(f"   - Mobile: {parsed_state.get('mobile', 'Not found')}")
+            st.info(f"   - address: {parsed_state.get('address', 'Not found')}")
+
 
             # ✅ STEP 4: Run the LangGraph pipeline
             result_state = graph.invoke(parsed_state)
@@ -95,7 +97,8 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
             # ✅ STEP 5: Extract results with proper fallbacks
             name = result_state.get("name") #or f"Candidate_{i+1}"
             email = result_state.get("email") #or sender
-            mobile = result_state.get("mobile") #or "Not available"
+            mobile = result_state.get("mobile")
+            address = result_state.get("address") #or "Not available"
 
             print("=" * 50)
             print(f"Extract results : {name},{email},{mobile}")
@@ -276,7 +279,7 @@ def display_ranked_candidates(processed_resumes):
                 st.markdown(f"**Email:** {res.get('email', 'N/A') or 'N/A'}")
                 st.markdown(f"**Mobile:** {res.get('mobile', 'N/A') or 'N/A'}")
                 st.markdown(f"**Job Type:** {res.get('job_type', 'Unknown') or 'Unknown'}")
-                st.markdown(f"**Job Type:** {res.get('address', 'Unknown') or 'Unknown'}")
+                st.markdown(f"**Address:** {res.get('address', 'Unknown') or 'Unknown'}")
                 # st.markdown(f"**Filename:** {res.get('filename', 'N/A')}")
                 
                 # Feedback with color coding
@@ -533,7 +536,7 @@ def run_streamlit():
                     # Only display if filepath is not empty
                     if filepath:
                         st.markdown(
-                            f"{i}. [{filename}](file:///{filepath}) (from: {sender})",
+                            f"{i}. [{filename}](file:///{filepath})",#(from: {sender})
                             unsafe_allow_html=True
                         )
                     else:
