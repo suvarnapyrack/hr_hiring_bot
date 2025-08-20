@@ -10,12 +10,14 @@ from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 import pandas as pd
 import gspread
 import requests
+import traceback
 from google.oauth2 import service_account
 import requests
 from langchain.embeddings import HuggingFaceEmbeddings
@@ -117,7 +119,7 @@ def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail") -> dict:
         print(f"✅ Successfully fetched {len(downloaded)} resumes from Gmail.")
         return {**state, "resumes": downloaded}
     else:
-        print("❌ No resumes found in Gmail in the last 7 days.")
+        print("❌ No resumes found in Gmail...........")
         return {**state, "resumes": []}
 
 
@@ -163,6 +165,7 @@ def fetch_from_drive(state=None):
             scopes=SCOPES
         )
 
+
         # ✅ Read Google Sheet
         gc = gspread.authorize(creds)
         SHEET_ID = '12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw'
@@ -175,7 +178,7 @@ def fetch_from_drive(state=None):
         print(f"data fareme {df.columns}")
         print({SHEET_ID})
 
-        resume_links = df["Resume"].dropna().tolist()
+        resume_links = df["Resume"].dropna().tolist()[:100]
         print("📄 Resume links found:", resume_links)
 
         # ✅ Prepare Drive API
@@ -195,7 +198,7 @@ def fetch_from_drive(state=None):
                     fileId=file_id,
                     fields="name,mimeType"
                 ).execute()
-                print({meta})
+                print(meta)  
 
                 orig_name = meta.get("name", f"{file_id}.pdf")  # fallback if no name
                 mime_type = meta.get("mimeType")
@@ -226,10 +229,10 @@ def fetch_from_drive(state=None):
         return downloaded_resumes
 
     except Exception as e:
-        print(f"❌ Error in fetch_from_drive: {e}")
+        print("❌ Error in fetch_from_drive:", e)
+        traceback.print_exc()
         return []
-
-                                                                                                                                                           
+                                                                                                                                                            
         
 
 def fetch_from_folder(state: ResumeState) -> ResumeState:
