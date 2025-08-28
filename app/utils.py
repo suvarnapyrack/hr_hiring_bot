@@ -1,3 +1,12 @@
+
+
+
+from dotenv import load_dotenv
+
+from dotenv import load_dotenv
+load_dotenv(override=True)
+from typing import Dict
+
 import mimetypes
 from pathlib import Path
 import os
@@ -10,59 +19,1241 @@ from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
 from sklearn.metrics.pairwise import cosine_similarity
 import json
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 import pandas as pd
 import gspread
-import requests
-import traceback
+
 from google.oauth2 import service_account
 import requests
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.embeddings import HuggingFaceEmbeddings
 from typing import TypedDict
-from typing import List, Dict
+
 # Load environment variables
 load_dotenv()
-llm = ChatGroq(model="llama3-8b-8192", api_key=os.getenv("GROQ_API_KEY"))
+# llm = ChatGroq(model="llama3-8b-8192", api_key=os.getenv("GROQ_API_KEY"))
+from langchain_ollama import ChatOllama
+from langchain.schema.messages import SystemMessage, HumanMessage
+# Initialize model
+llm = ChatOllama(model="gpt-oss:20b") 
+import mimetypes
+from pathlib import Path
+import os
+import re
+import pdfplumber
+import imaplib
+import email
+from datetime import datetime, timedelta
+from langchain_openai import OpenAIEmbeddings
+from dotenv import load_dotenv
+from sklearn.metrics.pairwise import cosine_similarity
+import json
+from langchain_core.prompts import PromptTemplate
+from langchain_groq import ChatGroq
+from langgraph.graph import StateGraph, END
+import pandas as pd
+import gspread
+
+from google.oauth2 import service_account
+import requests
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.embeddings import HuggingFaceEmbeddings
+from typing import TypedDict
+import io
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 
 
-# =============================================================================
-# 1. SOURCE SELECTION AND FETCHING FUNCTIONS
-# =============================================================================
+# response_sheet_id='12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw'
+# response_sheet_name="Form responses 1"
 
-from app.shared_types import ResumeState 
+# def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
+#     """
+#     Extract candidate data from main sheet including stipend and experience
+#     Added limit parameter to process only first N candidates
+#     """
+#     SCOPES = [
+#         'https://www.googleapis.com/auth/spreadsheets',
+#         'https://www.googleapis.com/auth/drive'
+#     ]
+    
+#     # Define constants first
+#     CREDENTIALS_PATH = r"D:\hr_chatboat\credentials.json"
+#     MAIN_SHEET_ID = "12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw"
+
+#     try:
+#         print(f"🔄 Extracting candidate data from main sheet (limit: {limit})...")
+
+#         # Authenticate
+#         creds = service_account.Credentials.from_service_account_file(
+#             CREDENTIALS_PATH, scopes=SCOPES
+#         )
+#         gc = gspread.authorize(creds)
+
+#         # Use provided sheet ID or default
+#         if not main_sheet_id:
+#             main_sheet_id = MAIN_SHEET_ID
+        
+#         print(f"📊 Using main sheet ID: {main_sheet_id}")
+        
+#         # Read main sheet
+#         sh = gc.open_by_key(main_sheet_id)
+#         ws = sh.sheet1
+        
+#         # Get all data from main sheet
+#         all_data = ws.get_all_records()
+#         df = pd.DataFrame(all_data)
+        
+#         # Remove completely empty rows
+#         df = df.dropna(how='all')
+
+#         # Apply limit (only first N candidates)
+#         df = df.head(limit)
+        
+        
+    
+
+#         # ✅ APPLY LIMIT HERE - Take only first N rows
+#         if limit and limit > 0:
+#             df = df.head(limit)
+#             print(f"📊 Limited to first {limit} rows")
+        
+#         print(f"✅ Main sheet columns: {df.columns.tolist()}")
+#         print(f"📊 Total rows after removing empty and applying limit: {len(df)}")
+        
+#         if len(df) == 0:
+#             print("❌ No data found in main sheet")
+#             return [], gc, main_sheet_id
+        
+#         # Column mapping - find best matching columns
+#         name_col = None
+#         mobile_col = None
+#         email_col = None
+#         address_col = None
+#         resume_col = None
+#         stipend_col = None
+#         experience_col = None
+        
+#         # Find columns with flexible matching
+#         for col in df.columns:
+#             col_lower = col.lower().strip()
+#             print(f"🔍 Checking column: '{col}' -> '{col_lower}'")
+            
+#             if 'name' in col_lower and not name_col:
+#                 name_col = col
+#                 print(f"✅ Name column: {col}")
+#             elif any(x in col_lower for x in ['mobile', 'phone', 'number']) and not mobile_col:
+#                 mobile_col = col
+#                 print(f"✅ Mobile column: {col}")
+#             elif 'email' in col_lower and not email_col:
+#                 email_col = col
+#                 print(f"✅ Email column: {col}")
+#             elif any(x in col_lower for x in ['address', 'location']) and not address_col:
+#                 address_col = col
+#                 print(f"✅ Address column: {col}")
+#             elif any(x in col_lower for x in ['resume', 'url', 'link', 'cv']) and not resume_col:
+#                 resume_col = col
+#                 print(f"✅ Resume column: {col}")
+#             elif any(x in col_lower for x in ['stipend', 'salary', 'expected', 'amount', 'pay']) and not stipend_col:
+#                 stipend_col = col
+#                 print(f"✅ Stipend column: {col}")
+#             elif any(x in col_lower for x in ['experience', 'exp', 'years', 'work']) and not experience_col:
+#                 experience_col = col
+#                 print(f"✅ Experience column: {col}")
+        
+#         print(f"\n📋 Final Column Mapping:")
+#         print(f"   Name: {name_col}")
+#         print(f"   Mobile: {mobile_col}")
+#         print(f"   Email: {email_col}")
+#         print(f"   Address: {address_col}")
+#         print(f"   Resume: {resume_col}")
+#         print(f"   Stipend: {stipend_col}")
+#         print(f"   Experience: {experience_col}")
+        
+#         # Extract candidate data with all fields
+#         candidate_data = []
+#         for idx, row in df.iterrows():
+#             # ✅ OPTIONAL: Additional check here if needed
+#             if limit and len(candidate_data) >= limit:
+#                 print(f"🛑 Reached limit of {limit} candidates, stopping extraction")
+#                 break
+                
+#             # Extract all data with safe fallbacks
+#             name_val = str(row.get(name_col, '')).strip() if name_col else ''
+#             mobile_val = str(row.get(mobile_col, '')).strip() if mobile_col else ''
+#             email_val = str(row.get(email_col, '')).strip() if email_col else ''
+#             address_val = str(row.get(address_col, '')).strip() if address_col else ''
+#             resume_val = str(row.get(resume_col, '')).strip() if resume_col else ''
+#             stipend_val = str(row.get(stipend_col, '')).strip() if stipend_col else ''
+#             experience_val = str(row.get(experience_col, '')).strip() if experience_col else ''
+            
+#             # Skip completely empty rows
+#             if not any([name_val, mobile_val, email_val, resume_val]):
+#                 print(f"⚠️ Skipping empty row {idx + 1}")
+#                 continue
+            
+#             # Clean up 'nan' and empty values
+#             def clean_value(val, default='Not found'):
+#                 if val in ['nan', 'None', 'null', '', 'NaN']:
+#                     return default
+#                 return val
+            
+#             name_val = clean_value(name_val)
+#             mobile_val = clean_value(mobile_val)
+#             email_val = clean_value(email_val)
+#             address_val = clean_value(address_val)
+#             resume_val = clean_value(resume_val, '')
+#             stipend_val = clean_value(stipend_val, 'Not specified')
+#             experience_val = clean_value(experience_val, 'Not specified')
+            
+#             # Create candidate info with ALL required fields
+#             candidate_info = {
+#                 # From Main Sheet
+#                 'name': name_val,
+#                 'mobile': mobile_val,
+#                 'email': email_val,
+#                 'address': address_val,
+#                 'resume_url': resume_val,
+#                 'stipend': stipend_val,          # ✅ FROM MAIN SHEET
+#                 'experience': experience_val,    # ✅ FROM MAIN SHEET
+                
+#                 # From LangGraph (will be updated during processing)
+#                 'skills': [],
+#                 'education': '',
+#                 'final_score': 0,
+#                 'similarity_score': 0,
+#                 'rank': ''
+#             }
+            
+#             candidate_data.append(candidate_info)
+#             print(f"✅ Added candidate {len(candidate_data)}: {name_val} | Email: {email_val} | Stipend: {stipend_val} | Experience: {experience_val}")
+        
+#         print(f"\n✅ Extracted {len(candidate_data)} candidates from main sheet (limited to {limit})")
+        
+#         # Debug: Show first few candidates
+#         if candidate_data:
+#             print("\n📋 First 3 candidates extracted:")
+#             for i, candidate in enumerate(candidate_data[:3], 1):
+#                 print(f"{i}. Name: {candidate['name']}")
+#                 print(f"   Email: {candidate['email']}")
+#                 print(f"   Mobile: {candidate['mobile']}")
+#                 print(f"   Stipend: {candidate['stipend']}")
+#                 print(f"   Experience: {candidate['experience']}")
+#                 print(f"   Resume URL: {candidate['resume_url'][:50]}..." if len(candidate['resume_url']) > 50 else f"   Resume URL: {candidate['resume_url']}")
+#                 print()
+        
+#         return candidate_data, gc, main_sheet_id
+        
+#     except Exception as e:
+#         print(f"❌ Error extracting data from main sheet: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         return [], None, None
+
+
+# def fetch_from_drive(state=None, limit=5):
+#     """
+#     Fetch and process candidates from Google Drive with complete data extraction
+#     Added limit parameter to process only first N candidates
+#     """
+#     def get_file_id(drive_url):
+#         if not drive_url or drive_url.strip() == '':
+#             return None
+#         if "id=" in drive_url:
+#             return drive_url.split("id=")[1]
+#         elif "/d/" in drive_url:
+#             return drive_url.split("/d/")[1].split("/")[0]
+#         return None
+
+#     try:
+#         print(f"🚀 Starting Google Drive processing (limit: {limit})...")
+        
+#         # Step 1: Extract candidate data from main sheet with limit
+#         candidate_data, gc, sheet_id = extract_candidate_data_from_main_sheet(limit=limit)
+        
+#         if not candidate_data:
+#             print("❌ No candidate data found")
+#             return []
+        
+#         print(f"📊 Processing {len(candidate_data)} candidates (limited to {limit})...")
+        
+#         # Step 2: Create analysis sheet for results
+#         analysis_sheet = create_candidate_analysis_sheet(gc, sheet_id, candidate_data)
+        
+#         if not analysis_sheet:
+#             print("❌ Failed to create analysis sheet")
+#             return candidate_data
+#         CREDENTIALS_PATH = r"D:\hr_chatboat\credentials.json"
+#         # MAIN_SHEET_ID = "12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw"
+#         # Step 3: Set up Drive API for resume download
+#         SCOPES = [
+#         'https://www.googleapis.com/auth/spreadsheets',
+#         'https://www.googleapis.com/auth/drive'
+#     ]
+    
+#         creds = service_account.Credentials.from_service_account_file(
+#             CREDENTIALS_PATH, scopes=SCOPES
+#         )
+#         drive_service = build("drive", "v3", credentials=creds)
+#         os.makedirs("resumes/from_drive", exist_ok=True)
+        
+#         processed_candidates = []
+        
+#         # Step 4: Process each candidate
+#         for i, candidate in enumerate(candidate_data):
+#             print(f"\n🔄 Processing candidate {i+1}/{len(candidate_data)}: {candidate.get('name', 'Unknown')}")
+#             print(f"📧 Email: {candidate.get('email', 'Not found')}")
+#             print(f"📱 Mobile: {candidate.get('mobile', 'Not found')}")
+#             print(f"💰 Stipend: {candidate.get('stipend', 'Not specified')}")
+#             print(f"📅 Experience: {candidate.get('experience', 'Not specified')}")
+            
+#             resume_url = candidate.get('resume_url', '')
+#             if not resume_url or resume_url.strip() == '' or resume_url == 'Not found':
+#                 print("⚠️ No resume URL found for this candidate")
+#                 candidate['final_score'] = 0
+#                 processed_candidates.append(candidate)
+#                 continue
+            
+#             print(f"🔗 Resume URL: {resume_url}")
+            
+#             # Download and process resume
+#             file_id = get_file_id(resume_url)
+#             if not file_id:
+#                 print(f"❌ Could not extract file_id from: {resume_url}")
+#                 candidate['final_score'] = 0
+#                 processed_candidates.append(candidate)
+#                 continue
+            
+#             try:
+#                 # Download the resume
+#                 print(f"⬇️ Downloading resume with file_id: {file_id}")
+#                 request = drive_service.files().get_media(fileId=file_id)
+#                 fh = io.BytesIO()
+#                 downloader = MediaIoBaseDownload(fh, request)
+#                 done = False
+#                 while not done:
+#                     status, done = downloader.next_chunk()
+                
+#                 fh.seek(0)
+#                 file_path = Path("resumes/from_drive") / f"{file_id}.pdf"
+#                 with open(file_path, "wb") as f:
+#                     f.write(fh.read())
+                
+#                 print(f"✅ Downloaded: {file_path}")
+                
+#                 # Process the resume using LangGraph pipeline
+#                 temp_state = {
+#                     "resume": str(file_path),
+#                     "jd_text": state.get("jd_text", "") if state else ""
+#                 }
+                
+#                 # Parse resume (extract basic info if missing from main sheet)
+#                 temp_state = parse_resume(temp_state)
+                
+#                 # Update candidate info with extracted data ONLY if missing from main sheet
+#                 if candidate.get('name') == 'Not found' and temp_state.get('name'):
+#                     candidate['name'] = temp_state.get('name', 'Not found')
+#                 if candidate.get('mobile') == 'Not found' and temp_state.get('mobile'):
+#                     candidate['mobile'] = temp_state.get('mobile', 'Not found')
+#                 if candidate.get('email') == 'Not found' and temp_state.get('email'):
+#                     candidate['email'] = temp_state.get('email', 'Not found')
+                
+#                 # LangGraph Analysis - extract skills, education, experience from resume
+#                 temp_state = analyze_skills_education_experience(temp_state)
+                
+#                 # Update candidate with LangGraph results
+#                 candidate['skills'] = temp_state.get('analysis', {}).get('skills', [])
+#                 candidate['education'] = temp_state.get('analysis', {}).get('education', '')
+                
+#                 # Note: Keep experience from main sheet, don't override with resume extraction
+#                 # candidate['experience'] stays as extracted from main sheet
+                
+#                 # Compute similarity with job description if provided
+#                 if temp_state.get("jd_text"):
+#                     temp_state = compute_similarity(temp_state)
+#                     temp_state = score_resume(temp_state)
+                    
+#                     candidate['similarity_score'] = temp_state.get('similarity_score', 0)
+#                     candidate['final_score'] = temp_state.get('score', 0)
+#                 else:
+#                     print("⚠️ No job description provided, skipping similarity and scoring")
+#                     candidate['similarity_score'] = 0
+#                     candidate['final_score'] = 0
+                
+#                 print(f"✅ Final score for {candidate.get('name', 'Unknown')}: {candidate['final_score']}")
+#                 print(f"🎯 Skills found: {len(candidate.get('skills', []))}")
+                
+#             except Exception as e:
+#                 print(f"❌ Error processing resume for {candidate.get('name', 'Unknown')}: {e}")
+#                 candidate['final_score'] = 0
+#                 candidate['similarity_score'] = 0
+#                 candidate['skills'] = []
+#                 candidate['education'] = ''
+            
+#             processed_candidates.append(candidate)
+        
+#         # Step 5: Rank candidates based on final score
+#         scored_candidates = [c for c in processed_candidates if c.get('final_score', 0) > 0]
+#         scored_candidates.sort(key=lambda x: x['final_score'], reverse=True)
+        
+#         # Assign ranks
+#         for i, candidate in enumerate(scored_candidates, 1):
+#             candidate['rank'] = i
+        
+#         # Candidates without scores get no rank
+#         unscored_candidates = [c for c in processed_candidates if c.get('final_score', 0) == 0]
+#         for candidate in unscored_candidates:
+#             candidate['rank'] = 'N/A'
+        
+#         # Step 6: Update the analysis sheet with all results
+#         update_success = update_candidate_analysis_sheet(analysis_sheet, processed_candidates)
+        
+#         if update_success:
+#             print(f"\n🎉 Processing complete!")
+#             print(f"📊 {len(scored_candidates)} candidates scored and ranked (from {limit} processed)")
+#             print(f"📋 Results saved to 'candidate analysis' sheet")
+            
+#             # Display top 5 candidates
+#             if scored_candidates:
+#                 print("\n🏆 TOP 5 CANDIDATES:")
+#                 print("-" * 120)
+#                 print(f"{'Rank':<4} {'Name':<25} {'Score':<8} {'Stipend':<15} {'Experience':<12} {'Email':<30}")
+#                 print("-" * 120)
+#                 for candidate in scored_candidates[:5]:
+#                     print(f"{candidate.get('rank', 'N/A'):<4} "
+#                           f"{candidate.get('name', 'Unknown')[:24]:<25} "
+#                           f"{candidate.get('final_score', 0):<8.2f} "
+#                           f"{str(candidate.get('stipend', 'Not specified'))[:14]:<15} "
+#                           f"{str(candidate.get('experience', 'Not specified'))[:11]:<12} "
+#                           f"{candidate.get('email', 'Not found')[:29]:<30}")
+        
+#         return processed_candidates
+
+#     except Exception as e:
+#         print("❌ Error in fetch_from_drive:", e)
+#         import traceback
+#         traceback.print_exc()
+#         return []
+
+
+# def run_complete_resume_analysis(jd_text="", source_type="drive", limit=5):
+#     """
+#     Main function to run complete resume analysis workflow
+#     Added limit parameter to process only first N resumes
+#     """
+#     print(f"🚀 Starting complete resume analysis (limit: {limit})...")
+    
+#     # Set up state with job description
+#     state = {
+#         "jd_text": jd_text,
+#         "source_type": source_type
+#     }
+    
+#     print(f"📝 Job Description provided: {'Yes' if jd_text else 'No'}")
+#     print(f"📊 Source type: {source_type}")
+#     print(f"🔢 Processing limit: {limit} resumes")
+    
+#     # Process based on source type
+#     if source_type == "drive":
+#         processed_candidates = fetch_from_drive(state, limit=limit)
+#     elif source_type == "folder":
+#         processed_candidates = fetch_from_folder(state, limit=limit)  # You'll need to add limit to this function too
+#     elif source_type == "gmail":
+#         processed_candidates = fetch_from_gmail(state, limit=limit)   # You'll need to add limit to this function too
+#     else:
+#         print("❌ Unknown source type")
+#         return []
+    
+#     print(f"\n✅ Analysis complete! Processed {len(processed_candidates)} candidates (limited to {limit}).")
+#     return processed_candidates
+
+
+# def test_complete_analysis_limited():
+#     """
+#     Test function to run the complete analysis with limit
+#     """
+#     sample_jd = """
+#     We are looking for a Data Analyst with experience in SQL, Python, and data visualization.
+#     Required skills: SQL, Python, Tableau, Excel, Data Analysis, Statistics
+#     Experience: 2-4 years preferred
+#     Location: Remote/Hybrid
+#     """
+    
+#     print("🧪 Testing complete analysis workflow with 50 resume limit...")
+    
+#     # Run complete analysis with 50 resume limit
+#     results = run_complete_resume_analysis(
+#         jd_text=sample_jd,
+#         source_type="drive",
+#         limit=50  # ✅ LIMIT SET HERE
+#     )
+    
+#     if results:
+#         print(f"\n✅ Test completed successfully!")
+#         print(f"📊 Processed {len(results)} candidates (limited to 50)")
+        
+#         # Show summary
+#         scored = [c for c in results if c.get('final_score', 0) > 0]
+#         print(f"🏆 {len(scored)} candidates scored")
+        
+#         if scored:
+#             print(f"🥇 Top candidate: {scored[0].get('name')} (Score: {scored[0].get('final_score')})")
+#     else:
+#         print("❌ Test failed - no results returned")
+    
+#     return results
+def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
+    """
+    Extract candidate data from main sheet including stipend and experience
+    Added limit parameter to process only first N candidates
+    UPDATED: Now includes tracking sheet creation and duplicate checking
+    """
+    SCOPES = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ]
+    
+    # Define constants first
+    CREDENTIALS_PATH = r"D:\hr_chatboat\credentials.json"
+    MAIN_SHEET_ID = "12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw"
+
+    try:
+        print(f"🔄 Extracting candidate data from main sheet (limit: {limit})...")
+
+        # Authenticate
+        creds = service_account.Credentials.from_service_account_file(
+            CREDENTIALS_PATH, scopes=SCOPES
+        )
+        gc = gspread.authorize(creds)
+
+        # Use provided sheet ID or default
+        if not main_sheet_id:
+            main_sheet_id = MAIN_SHEET_ID
+        
+        print(f"📊 Using main sheet ID: {main_sheet_id}")
+        
+        # Read main sheet
+        sh = gc.open_by_key(main_sheet_id)
+        ws = sh.sheet1
+        
+        # ✅ NEW: Create or get tracking sheet
+        try:
+            tracking_sheet = sh.worksheet("processing_tracker")
+            print("✅ Found existing tracking sheet")
+        except:
+            print("🆕 Creating new tracking sheet...")
+            tracking_sheet = sh.add_worksheet(title="processing_tracker", rows=1000, cols=8)
+            headers = ['Row_Number', 'Name', 'Email', 'Mobile', 'Processing_Status', 'Processing_Date', 'Final_Score', 'Resume_URL']
+            tracking_sheet.insert_row(headers, 1)
+            print("✅ Created new tracking sheet")
+        
+        # ✅ NEW: Get already processed candidates
+        processed_emails = set()
+        processed_mobiles = set()
+        last_row_processed = 0
+        
+        try:
+            tracking_data = tracking_sheet.get_all_records()
+            for record in tracking_data:
+                if record.get('Processing_Status') == 'COMPLETED':
+                    email = str(record.get('Email', '')).strip().lower()
+                    mobile = str(record.get('Mobile', '')).strip()
+                    if email and email != 'not found':
+                        processed_emails.add(email)
+                    if mobile and mobile != 'not found':
+                        processed_mobiles.add(mobile)
+                    
+                    row_num = record.get('Row_Number', 0)
+                    if isinstance(row_num, (int, float)) and row_num > last_row_processed:
+                        last_row_processed = int(row_num)
+            
+            print(f"📊 Found {len(processed_emails)} processed emails, {len(processed_mobiles)} processed mobiles")
+            print(f"📍 Last row processed: {last_row_processed}")
+        except:
+            print("📊 No previous processing data found")
+        
+        # Get all data from main sheet
+        all_data = ws.get_all_records()
+        df = pd.DataFrame(all_data)
+        
+        # Remove completely empty rows
+        df = df.dropna(how='all')
+
+        # ✅ NEW: Add row numbers for tracking and filter from last processed + 1
+        df = df.reset_index(drop=True)
+        df['original_row_number'] = df.index + 2  # +2 because Excel starts at 1 and has header
+        
+        # Start from next unprocessed row
+        start_from_row = last_row_processed + 1
+        if start_from_row > 2:  # 2 because first data row is 2
+            df = df[df['original_row_number'] >= start_from_row]
+            print(f"📊 Starting from row {start_from_row} (continuing from last run)")
+        
+        # Apply limit (only first N candidates)
+        if limit and limit > 0:
+            df = df.head(limit)
+            print(f"📊 Limited to first {limit} rows")
+        
+        print(f"✅ Main sheet columns: {df.columns.tolist()}")
+        print(f"📊 Total rows after removing empty and applying limit: {len(df)}")
+        
+        if len(df) == 0:
+            print("❌ No new data found in main sheet (all candidates may be already processed)")
+            return [], gc, main_sheet_id, tracking_sheet
+        
+        # Column mapping - find best matching columns
+        name_col = None
+        mobile_col = None
+        email_col = None
+        address_col = None
+        resume_col = None
+        stipend_col = None
+        experience_col = None
+        
+        # Find columns with flexible matching
+        for col in df.columns:
+            if col == 'original_row_number':
+                continue
+                
+            col_lower = col.lower().strip()
+            print(f"🔍 Checking column: '{col}' -> '{col_lower}'")
+            
+            if 'name' in col_lower and not name_col:
+                name_col = col
+                print(f"✅ Name column: {col}")
+            elif any(x in col_lower for x in ['mobile', 'phone', 'number']) and not mobile_col:
+                mobile_col = col
+                print(f"✅ Mobile column: {col}")
+            elif 'email' in col_lower and not email_col:
+                email_col = col
+                print(f"✅ Email column: {col}")
+            elif any(x in col_lower for x in ['address', 'location']) and not address_col:
+                address_col = col
+                print(f"✅ Address column: {col}")
+            elif any(x in col_lower for x in ['resume', 'url', 'link', 'cv']) and not resume_col:
+                resume_col = col
+                print(f"✅ Resume column: {col}")
+            elif any(x in col_lower for x in ['stipend', 'salary', 'expected', 'amount', 'pay']) and not stipend_col:
+                stipend_col = col
+                print(f"✅ Stipend column: {col}")
+            elif any(x in col_lower for x in ['experience', 'exp', 'years', 'work']) and not experience_col:
+                experience_col = col
+                print(f"✅ Experience column: {col}")
+        
+        print(f"\n📋 Final Column Mapping:")
+        print(f"   Name: {name_col}")
+        print(f"   Mobile: {mobile_col}")
+        print(f"   Email: {email_col}")
+        print(f"   Address: {address_col}")
+        print(f"   Resume: {resume_col}")
+        print(f"   Stipend: {stipend_col}")
+        print(f"   Experience: {experience_col}")
+        
+        # Extract candidate data with all fields
+        candidate_data = []
+        for idx, row in df.iterrows():
+            original_row = row.get('original_row_number', idx + 2)
+            
+            # Extract all data with safe fallbacks
+            name_val = str(row.get(name_col, '')).strip() if name_col else ''
+            mobile_val = str(row.get(mobile_col, '')).strip() if mobile_col else ''
+            email_val = str(row.get(email_col, '')).strip() if email_col else ''
+            address_val = str(row.get(address_col, '')).strip() if address_col else ''
+            resume_val = str(row.get(resume_col, '')).strip() if resume_col else ''
+            stipend_val = str(row.get(stipend_col, '')).strip() if stipend_col else ''
+            experience_val = str(row.get(experience_col, '')).strip() if experience_col else ''
+            
+            # Skip completely empty rows
+            if not any([name_val, mobile_val, email_val, resume_val]):
+                print(f"⚠️ Skipping empty row {original_row}")
+                continue
+            
+            # Clean up 'nan' and empty values
+            def clean_value(val, default='Not found'):
+                if val in ['nan', 'None', 'null', '', 'NaN']:
+                    return default
+                return val
+            
+            name_val = clean_value(name_val)
+            mobile_val = clean_value(mobile_val)
+            email_val = clean_value(email_val)
+            address_val = clean_value(address_val)
+            resume_val = clean_value(resume_val, '')
+            stipend_val = clean_value(stipend_val, 'Not specified')
+            experience_val = clean_value(experience_val, 'Not specified')
+            
+            # ✅ NEW: Check if candidate already processed
+            email_check = email_val.lower().strip() if email_val != 'Not found' else None
+            mobile_check = mobile_val.strip() if mobile_val != 'Not found' else None
+            
+            if (email_check and email_check in processed_emails) or (mobile_check and mobile_check in processed_mobiles):
+                print(f"⏭️ Skipping already processed candidate: {name_val} (Row: {original_row})")
+                continue
+            
+            # Create candidate info with ALL required fields
+            candidate_info = {
+                # ✅ NEW: Add tracking info
+                'original_row_number': original_row,
+                
+                # From Main Sheet
+                'name': name_val,
+                'mobile': mobile_val,
+                'email': email_val,
+                'address': address_val,
+                'resume_url': resume_val,
+                'stipend': stipend_val,          # ✅ FROM MAIN SHEET
+                'experience': experience_val,    # ✅ FROM MAIN SHEET
+                
+                # From LangGraph (will be updated during processing)
+                'skills': [],
+                'education': '',
+                'final_score': 0,
+                'similarity_score': 0,
+                'rank': ''
+            }
+            
+            candidate_data.append(candidate_info)
+            print(f"✅ Added candidate {len(candidate_data)}: {name_val} (Row: {original_row}) | Email: {email_val} | Stipend: {stipend_val} | Experience: {experience_val}")
+        
+        print(f"\n✅ Extracted {len(candidate_data)} NEW candidates from main sheet (limited to {limit})")
+        
+        # Debug: Show first few candidates
+        if candidate_data:
+            print("\n📋 First 3 NEW candidates extracted:")
+            for i, candidate in enumerate(candidate_data[:3], 1):
+                print(f"{i}. Name: {candidate['name']} (Row: {candidate['original_row_number']})")
+                print(f"   Email: {candidate['email']}")
+                print(f"   Mobile: {candidate['mobile']}")
+                print(f"   Stipend: {candidate['stipend']}")
+                print(f"   Experience: {candidate['experience']}")
+                print(f"   Resume URL: {candidate['resume_url'][:50]}..." if len(candidate['resume_url']) > 50 else f"   Resume URL: {candidate['resume_url']}")
+                print()
+        
+        return candidate_data, gc, main_sheet_id, tracking_sheet
+        
+    except Exception as e:
+        print(f"❌ Error extracting data from main sheet: {e}")
+        import traceback
+        traceback.print_exc()
+        return [], None, None, None
+
+
+def fetch_from_drive(state=None, limit=50):
+    """
+    Fetch and process candidates from Google Drive with complete data extraction
+    Added limit parameter to process only first N candidates
+    UPDATED: Now includes duplicate prevention and tracking
+    """
+    def get_file_id(drive_url):
+        if not drive_url or drive_url.strip() == '':
+            return None
+        if "id=" in drive_url:
+            return drive_url.split("id=")[1]
+        elif "/d/" in drive_url:
+            return drive_url.split("/d/")[1].split("/")[0]
+        return None
+
+    try:
+        print(f"🚀 Starting Google Drive processing (limit: {limit})...")
+        
+        # Step 1: Extract candidate data from main sheet with limit and tracking
+        candidate_data, gc, sheet_id, tracking_sheet = extract_candidate_data_from_main_sheet(limit=limit)
+        
+        if not candidate_data:
+            print("❌ No new candidate data found")
+            return []
+        
+        print(f"📊 Processing {len(candidate_data)} NEW candidates (limited to {limit})...")
+        
+        # Step 2: Create or get analysis sheet for real-time updates
+        try:
+            sh = gc.open_by_key(sheet_id)
+            try:
+                analysis_sheet = sh.worksheet("candidate analysis")
+                print("✅ Found existing candidate analysis sheet")
+            except:
+                print("🆕 Creating new candidate analysis sheet...")
+                analysis_sheet = create_candidate_analysis_sheet(gc, sheet_id, candidate_data)
+        except:
+            analysis_sheet = None
+        
+        if not analysis_sheet:
+            print("❌ Failed to create/get analysis sheet")
+            return candidate_data
+            
+        CREDENTIALS_PATH = r"D:\hr_chatboat\credentials.json"
+        
+        # Step 3: Set up Drive API for resume download
+        SCOPES = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+    
+        creds = service_account.Credentials.from_service_account_file(
+            CREDENTIALS_PATH, scopes=SCOPES
+        )
+        drive_service = build("drive", "v3", credentials=creds)
+        os.makedirs("resumes/from_drive", exist_ok=True)
+        
+        processed_candidates = []
+        
+        # Step 4: Process each candidate
+        for i, candidate in enumerate(candidate_data):
+            row_number = candidate.get('original_row_number')
+            print(f"\n🔄 Processing candidate {i+1}/{len(candidate_data)}: {candidate.get('name', 'Unknown')} (Row: {row_number})")
+            print(f"📧 Email: {candidate.get('email', 'Not found')}")
+            print(f"📱 Mobile: {candidate.get('mobile', 'Not found')}")
+            print(f"💰 Stipend: {candidate.get('stipend', 'Not specified')}")
+            print(f"📅 Experience: {candidate.get('experience', 'Not specified')}")
+            
+            try:
+                resume_url = candidate.get('resume_url', '')
+                if not resume_url or resume_url.strip() == '' or resume_url == 'Not found':
+                    print("⚠️ No resume URL found for this candidate")
+                    candidate['final_score'] = 0
+                    processed_candidates.append(candidate)
+                    
+                    # ✅ NEW: Update tracking sheet
+                    from datetime import datetime
+                    tracking_row = [
+                        row_number, candidate.get('name', ''), candidate.get('email', ''), 
+                        candidate.get('mobile', ''), 'COMPLETED', 
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, ''
+                    ]
+                    tracking_sheet.append_row(tracking_row)
+                    
+                    # ✅ NEW: Real-time update to analysis sheet
+                    if analysis_sheet:
+                        try:
+                            candidate_row = [
+                                candidate.get('name', ''),
+                                candidate.get('email', ''),
+                                candidate.get('mobile', ''),
+                                candidate.get('address', ''),
+                                '',  # skills (empty for no resume)
+                                '',  # education (empty for no resume)
+                                candidate.get('stipend', ''),
+                                candidate.get('experience', ''),
+                                0,   # final_score
+                                0,   # similarity_score
+                                'N/A', # rank
+                                '',  # resume_url (empty)
+                                f"Row {row_number} - No Resume"
+                            ]
+                            analysis_sheet.append_row(candidate_row)
+                            print(f"✅ Added to analysis sheet: {candidate.get('name')} - No Resume")
+                        except Exception as sheet_error:
+                            print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+                    continue
+                
+                print(f"🔗 Resume URL: {resume_url}")
+                
+                # Download and process resume
+                file_id = get_file_id(resume_url)
+                if not file_id:
+                    print(f"❌ Could not extract file_id from: {resume_url}")
+                    candidate['final_score'] = 0
+                    processed_candidates.append(candidate)
+                    
+                    # ✅ NEW: Update tracking sheet
+                    from datetime import datetime
+                    tracking_row = [
+                        row_number, candidate.get('name', ''), candidate.get('email', ''), 
+                        candidate.get('mobile', ''), 'ERROR', 
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, resume_url
+                    ]
+                    tracking_sheet.append_row(tracking_row)
+                    
+                    # ✅ NEW: Real-time update to analysis sheet
+                    if analysis_sheet:
+                        try:
+                            candidate_row = [
+                                candidate.get('name', ''),
+                                candidate.get('email', ''),
+                                candidate.get('mobile', ''),
+                                candidate.get('address', ''),
+                                '',  # skills
+                                '',  # education
+                                candidate.get('stipend', ''),
+                                candidate.get('experience', ''),
+                                0,   # final_score
+                                0,   # similarity_score
+                                'N/A', # rank
+                                resume_url,
+                                f"Row {row_number} - Invalid URL"
+                            ]
+                            analysis_sheet.append_row(candidate_row)
+                            print(f"✅ Added to analysis sheet: {candidate.get('name')} - ERROR")
+                        except Exception as sheet_error:
+                            print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+                    continue
+                
+                try:
+                    # Download the resume
+                    print(f"⬇️ Downloading resume with file_id: {file_id}")
+                    request = drive_service.files().get_media(fileId=file_id)
+                    fh = io.BytesIO()
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
+                    
+                    fh.seek(0)
+                    file_path = Path("resumes/from_drive") / f"{file_id}.pdf"
+                    with open(file_path, "wb") as f:
+                        f.write(fh.read())
+                    
+                    print(f"✅ Downloaded: {file_path}")
+                    
+                    # Process the resume using LangGraph pipeline
+                    temp_state = {
+                        "resume": str(file_path),
+                        "jd_text": state.get("jd_text", "") if state else ""
+                    }
+                    
+                    # Parse resume (extract basic info if missing from main sheet)
+                    temp_state = parse_resume(temp_state)
+                    
+                    # Update candidate info with extracted data ONLY if missing from main sheet
+                    if candidate.get('name') == 'Not found' and temp_state.get('name'):
+                        candidate['name'] = temp_state.get('name', 'Not found')
+                    if candidate.get('mobile') == 'Not found' and temp_state.get('mobile'):
+                        candidate['mobile'] = temp_state.get('mobile', 'Not found')
+                    if candidate.get('email') == 'Not found' and temp_state.get('email'):
+                        candidate['email'] = temp_state.get('email', 'Not found')
+                    
+                    # LangGraph Analysis - extract skills, education, experience from resume
+                    temp_state = analyze_skills_education_experience(temp_state)
+                    
+                    # Update candidate with LangGraph results
+                    candidate['skills'] = temp_state.get('analysis', {}).get('skills', [])
+                    candidate['education'] = temp_state.get('analysis', {}).get('education', '')
+                    
+                    # Note: Keep experience from main sheet, don't override with resume extraction
+                    # candidate['experience'] stays as extracted from main sheet
+                    
+                    # Compute similarity with job description if provided
+                    if temp_state.get("jd_text"):
+                        temp_state = compute_similarity(temp_state)
+                        temp_state = score_resume(temp_state)
+                        
+                        candidate['similarity_score'] = temp_state.get('similarity_score', 0)
+                        candidate['final_score'] = temp_state.get('score', 0)
+                    else:
+                        print("⚠️ No job description provided, skipping similarity and scoring")
+                        candidate['similarity_score'] = 0
+                        candidate['final_score'] = 0
+                    
+                    print(f"✅ Final score for {candidate.get('name', 'Unknown')}: {candidate['final_score']}")
+                    print(f"🎯 Skills found: {len(candidate.get('skills', []))}")
+                    
+                    # ✅ NEW: Update tracking sheet with successful processing
+                    from datetime import datetime
+                    tracking_row = [
+                        row_number, candidate.get('name', ''), candidate.get('email', ''), 
+                        candidate.get('mobile', ''), 'COMPLETED', 
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
+                        candidate.get('final_score', 0), resume_url
+                    ]
+                    tracking_sheet.append_row(tracking_row)
+                    
+                    # ✅ NEW: Real-time update to analysis sheet for each candidate
+                    if analysis_sheet:
+                        try:
+                            candidate_row = [
+                                candidate.get('name', ''),
+                                candidate.get('email', ''),
+                                candidate.get('mobile', ''),
+                                candidate.get('address', ''),
+                                ', '.join(candidate.get('skills', [])),
+                                candidate.get('education', ''),
+                                candidate.get('stipend', ''),
+                                candidate.get('experience', ''),
+                                candidate.get('final_score', 0),
+                                candidate.get('similarity_score', 0),
+                                '', # rank will be updated later
+                                candidate.get('resume_url', ''),
+                                f"Row {row_number}"
+                            ]
+                            analysis_sheet.append_row(candidate_row)
+                            print(f"✅ Added to analysis sheet: {candidate.get('name')} - Score: {candidate.get('final_score')}")
+                        except Exception as sheet_error:
+                            print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+                    
+                    
+                except Exception as download_error:
+                    print(f"❌ Error downloading/processing resume: {download_error}")
+                    candidate['final_score'] = 0
+                    candidate['similarity_score'] = 0
+                    candidate['skills'] = []
+                    candidate['education'] = ''
+                    
+                    # ✅ NEW: Update tracking sheet with error
+                    from datetime import datetime
+                    tracking_row = [
+                        row_number, candidate.get('name', ''), candidate.get('email', ''), 
+                        candidate.get('mobile', ''), 'ERROR', 
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, resume_url
+                    ]
+                    tracking_sheet.append_row(tracking_row)
+                    
+                    # ✅ NEW: Real-time update to analysis sheet
+                    if analysis_sheet:
+                        try:
+                            candidate_row = [
+                                candidate.get('name', ''),
+                                candidate.get('email', ''),
+                                candidate.get('mobile', ''),
+                                candidate.get('address', ''),
+                                '',  # skills
+                                '',  # education
+                                candidate.get('stipend', ''),
+                                candidate.get('experience', ''),
+                                0,   # final_score
+                                0,   # similarity_score
+                                'N/A', # rank
+                                resume_url,
+                                f"Row {row_number} - Download Error"
+                            ]
+                            analysis_sheet.append_row(candidate_row)
+                            print(f"✅ Added to analysis sheet: {candidate.get('name')} - ERROR")
+                        except Exception as sheet_error:
+                            print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+                
+            except Exception as e:
+                print(f"❌ Error processing candidate {candidate.get('name', 'Unknown')}: {e}")
+                candidate['final_score'] = 0
+                candidate['similarity_score'] = 0
+                candidate['skills'] = []
+                candidate['education'] = ''
+                
+                # ✅ NEW: Update tracking sheet with error
+                from datetime import datetime
+                tracking_row = [
+                    row_number, candidate.get('name', ''), candidate.get('email', ''), 
+                    candidate.get('mobile', ''), 'ERROR', 
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, 
+                    candidate.get('resume_url', '')
+                ]
+                tracking_sheet.append_row(tracking_row)
+                
+                # ✅ NEW: Real-time update to analysis sheet
+                if analysis_sheet:
+                    try:
+                        candidate_row = [
+                            candidate.get('name', ''),
+                            candidate.get('email', ''),
+                            candidate.get('mobile', ''),
+                            candidate.get('address', ''),
+                            '',  # skills
+                            '',  # education
+                            candidate.get('stipend', ''),
+                            candidate.get('experience', ''),
+                            0,   # final_score
+                            0,   # similarity_score
+                            'N/A', # rank
+                            candidate.get('resume_url', ''),
+                            f"Row {row_number} - Processing Error"
+                        ]
+                        analysis_sheet.append_row(candidate_row)
+                        print(f"✅ Added to analysis sheet: {candidate.get('name')} - ERROR")
+                    except Exception as sheet_error:
+                        print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+            
+            processed_candidates.append(candidate)
+        
+        # Step 5: Rank candidates based on final score
+        scored_candidates = [c for c in processed_candidates if c.get('final_score', 0) > 0]
+        scored_candidates.sort(key=lambda x: x['final_score'], reverse=True)
+        
+        # Assign ranks
+        for i, candidate in enumerate(scored_candidates, 1):
+            candidate['rank'] = i
+        
+        # Candidates without scores get no rank
+        unscored_candidates = [c for c in processed_candidates if c.get('final_score', 0) == 0]
+        for candidate in unscored_candidates:
+            candidate['rank'] = 'N/A'
+        
+        # Step 6: Update rankings in analysis sheet (final step)
+        if analysis_sheet and scored_candidates:
+            print(f"\n🔄 Updating rankings in analysis sheet...")
+            try:
+                # Get all data from analysis sheet to update ranks
+                analysis_data = analysis_sheet.get_all_records()
+                
+                # Update ranks for scored candidates
+                for candidate in scored_candidates:
+                    candidate_name = candidate.get('name', '')
+                    candidate_email = candidate.get('email', '')
+                    
+                    # Find matching row in analysis sheet and update rank
+                    for row_idx, row_data in enumerate(analysis_data, start=2):  # start=2 because row 1 is header
+                        if (row_data.get('Name') == candidate_name and 
+                            row_data.get('Email') == candidate_email):
+                            analysis_sheet.update(f'K{row_idx}', candidate.get('rank', ''))  # Column K is rank
+                            break
+                
+                print(f"✅ Updated rankings for {len(scored_candidates)} candidates")
+                
+            except Exception as rank_error:
+                print(f"⚠️ Error updating rankings: {rank_error}")
+        
+        # Remove the old batch update since we're doing real-time updates
+        # update_success = update_candidate_analysis_sheet(analysis_sheet, processed_candidates)
+        
+        update_success = True  # Since we're doing real-time updates
+        
+        if update_success:
+            print(f"\n🎉 Processing complete!")
+            print(f"📊 {len(scored_candidates)} candidates scored and ranked (from {limit} processed)")
+            print(f"📋 Results saved to 'candidate analysis' sheet")
+            print(f"📝 Progress tracked in 'processing_tracker' sheet")
+            
+            # Display top 5 candidates
+            if scored_candidates:
+                print("\n🏆 TOP 5 CANDIDATES:")
+                print("-" * 130)
+                print(f"{'Rank':<4} {'Name':<25} {'Score':<8} {'Stipend':<15} {'Experience':<12} {'Row':<5} {'Email':<30}")
+                print("-" * 130)
+                for candidate in scored_candidates[:5]:
+                    print(f"{candidate.get('rank', 'N/A'):<4} "
+                          f"{candidate.get('name', 'Unknown')[:24]:<25} "
+                          f"{candidate.get('final_score', 0):<8.2f} "
+                          f"{str(candidate.get('stipend', 'Not specified'))[:14]:<15} "
+                          f"{str(candidate.get('experience', 'Not specified'))[:11]:<12} "
+                          f"{candidate.get('original_row_number', 'N/A'):<5} "
+                          f"{candidate.get('email', 'Not found')[:29]:<30}")
+        
+        return processed_candidates
+
+    except Exception as e:
+        print("❌ Error in fetch_from_drive:", e)
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+def run_complete_resume_analysis(jd_text="", source_type="drive", limit=5):
+    """
+    Main function to run complete resume analysis workflow
+    Added limit parameter to process only first N resumes
+    UPDATED: Now automatically continues from last processed position
+    """
+    print(f"🚀 Starting complete resume analysis (limit: {limit})...")
+    print(f"🔄 Will automatically continue from last processed position...")
+    
+    # Set up state with job description
+    state = {
+        "jd_text": jd_text,
+        "source_type": source_type
+    }
+    
+    print(f"📝 Job Description provided: {'Yes' if jd_text else 'No'}")
+    print(f"📊 Source type: {source_type}")
+    print(f"🔢 Processing limit: {limit} resumes")
+    
+    # Process based on source type
+    if source_type == "drive":
+        processed_candidates = fetch_from_drive(state, limit=limit)
+    elif source_type == "folder":
+        processed_candidates = fetch_from_folder(state, limit=limit)  # You'll need to add limit to this function too
+    elif source_type == "gmail":
+        processed_candidates = fetch_from_gmail(state, limit=limit)   # You'll need to add limit to this function too
+    else:
+        print("❌ Unknown source type")
+        return []
+    
+    print(f"\n✅ Analysis complete! Processed {len(processed_candidates)} NEW candidates (limited to {limit}).")
+    print(f"🔄 Next run will automatically continue from next unprocessed candidates.")
+    return processed_candidates
+
+
+def test_complete_analysis_limited():
+    """
+    Test function to run the complete analysis with limit
+    UPDATED: Now demonstrates continuation functionality
+    """
+    sample_jd = """
+    We are looking for a Data Analyst with experience in SQL, Python, and data visualization.
+    Required skills: SQL, Python, Tableau, Excel, Data Analysis, Statistics
+    Experience: 2-4 years preferred
+    Location: Remote/Hybrid
+    """
+    
+    print("🧪 Testing complete analysis workflow with continuation...")
+    
+    # First run - process first 10 resumes
+    print("\n" + "="*60)
+    print("FIRST RUN - Processing first 10 resumes")
+    print("="*60)
+    
+    results1 = run_complete_resume_analysis(
+        jd_text=sample_jd,
+        source_type="drive",
+        limit=10
+    )
+    
+    # Second run - will automatically continue from where first run left off
+    print("\n" + "="*60)
+    print("SECOND RUN - Automatically continuing from last position")
+    print("="*60)
+    
+    results2 = run_complete_resume_analysis(
+        jd_text=sample_jd,
+        source_type="drive",
+        limit=10
+    )
+    
+    # Third run - will continue from where second run left off
+    print("\n" + "="*60)
+    print("THIRD RUN - Continuing again...")
+    print("="*60)
+    
+    results3 = run_complete_resume_analysis(
+        jd_text=sample_jd,
+        source_type="drive",
+        limit=10
+    )
+    
+    print("\n🎯 FINAL SUMMARY:")
+    print(f"📊 First run processed: {len(results1)} candidates")
+    print(f"📊 Second run processed: {len(results2)} candidates")
+    print(f"📊 Third run processed: {len(results3)} candidates")
+    print(f"📊 Total NEW candidates processed: {len(results1) + len(results2) + len(results3)}")
+    print(f"✅ No duplicates processed - each candidate processed only once!")
+    print(f"📝 Check 'processing_tracker' sheet to see processing history")
+    
+    if len(results1) > 0:
+        print(f"🔄 All runs completed successfully with automatic continuation")
+    elif len(results1) == 0 and len(results2) == 0 and len(results3) == 0:
+        print(f"ℹ️ No new candidates found - all may be already processed")
+    
+    return results1, results2, results3
+from .shared_types import ResumeState
+
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.langgraph_flow import ResumeState
-def choose_source(state: ResumeState) -> ResumeState:   #first state where user can choose source of resume doucement 
-    """
-    Entry point - determines which source to use for fetching resumes
-    This should be configured based on your needs
-    """
-    # For now, defaulting to folder source - modify as needed
+
+def choose_source(state: ResumeState) -> ResumeState:
     source_type = state.get("source_type", "folder")
     print(f"✅ Chosen source: {source_type}")
     return {**state, "source_type": source_type}
 
-
-
 def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: str = "resumes/gmail") -> list[dict]:
-    """
-    Fetch resumes (PDF/DOC/DOCX) from Gmail inbox in the last 20 days.
-    """
     os.makedirs(download_dir, exist_ok=True)
     allowed_ext = (".pdf", ".doc", ".docx")
     downloaded = []
 
     try:
-        # Connect to Gmail
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(user_email, app_password)
         mail.select("inbox")
 
-        date_since = (datetime.now() - timedelta(days=20)).strftime("%d-%b-%Y")
+        date_since = (datetime.now() - timedelta(days=15)).strftime("%d-%b-%Y")
         result, data = mail.search(None, f'(SINCE {date_since})')
 
         if result != "OK":
@@ -94,18 +1285,13 @@ def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: s
                             "sender_email": sender_email
                         })
 
-        # mail.logout()
         return downloaded
 
     except Exception as e:
         print(f"❌ Error fetching resumes from Gmail: {e}")
         return []
 
-
 def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail") -> dict:
-    """
-    Wrapper to integrate Gmail fetch into ResumeState workflow.
-    """
     user_email = os.getenv("GMAIL_USER")
     app_password = os.getenv("GMAIL_PASS")
 
@@ -119,121 +1305,113 @@ def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail") -> dict:
         print(f"✅ Successfully fetched {len(downloaded)} resumes from Gmail.")
         return {**state, "resumes": downloaded}
     else:
-        print("❌ No resumes found in Gmail...........")
+        print("❌ No resumes found in Gmail in the last 7 days.")
         return {**state, "resumes": []}
 
-
-
-
-import pandas as pd
-import gspread
-import requests
-import os
-import re
-from pathlib import Path
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-import io
-from pathlib import Path
-
-
-
-
-
-def fetch_from_drive(state=None):
-    """
-    Fetch resumes from Google Drive via Google Sheets using Drive API.
-    """
-    SCOPES = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ]
-
-    def get_file_id(drive_url: str) -> str:
-        """Extract file ID from Google Drive URL."""
-        if "id=" in drive_url:
-            return drive_url.split("id=")[1]
-        elif "/d/" in drive_url:
-            return drive_url.split("/d/")[1].split("/")[0]
+def create_candidate_analysis_sheet(gc, sheet_id, candidate_data):
+    try:
+        sh = gc.open_by_key(sheet_id)
+        
+        try:
+            existing_sheet = sh.worksheet('candidate analysis')
+            print("⚠️ 'candidate analysis' sheet already exists. Clearing it...")
+            existing_sheet.clear()
+            analysis_sheet = existing_sheet
+        except gspread.exceptions.WorksheetNotFound:
+            print("🔄 Creating new 'candidate analysis' sheet...")
+            analysis_sheet = sh.add_worksheet(
+                title='candidate analysis',
+                rows=1000,
+                cols=12
+            )
+        
+        headers = [
+            'Serial No',
+            'Name',
+            'Mobile',
+            'Email', 
+            'Address',
+            'Stipend',
+            'Final Score',
+            'Similarity Score',
+            'Experience',
+            'Top Skills',
+            'Rank',
+            'Analysis Date',
+            'Status'
+        ]
+        
+        analysis_sheet.update('A1:M1', [headers])
+        
+        analysis_sheet.format('A1:M1', {
+            'textFormat': {'bold': True},
+            'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+        })
+        
+        print("✅ Successfully created 'candidate analysis' sheet with headers")
+        return analysis_sheet
+        
+    except Exception as e:
+        print(f"❌ Error creating analysis sheet: {e}")
         return None
 
+def update_candidate_analysis_sheet(analysis_sheet, candidate_data):
+    """
+    Update the candidate analysis sheet with processed data including final scores
+    """
     try:
-        # ✅ Authenticate with Service Account
-        creds = service_account.Credentials.from_service_account_file(
-            r'D:\hr_chatboat\credentials.json',
-            scopes=SCOPES
-        )
-
-
-        # ✅ Read Google Sheet
-        gc = gspread.authorize(creds)
-        SHEET_ID = '12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw'
-        sh = gc.open_by_key(SHEET_ID)
-        print(f"sheeet {sh}")
-        ws = sh.sheet1
-        print(f"sheeet 1 {sh}")
-        rows = ws.get_all_records()
-        df = pd.DataFrame(rows)
-        print(f"data fareme {df.columns}")
-        print({SHEET_ID})
-
-        resume_links = df["Resume"].dropna().tolist()[:100]
-        print("📄 Resume links found:", resume_links)
-
-        # ✅ Prepare Drive API
-        drive_service = build("drive", "v3", credentials=creds)
-        os.makedirs("resumes/from_drive", exist_ok=True)
-
-        downloaded_resumes = []
-        for link in resume_links:
-            file_id = get_file_id(link)
-            if not file_id:
-                print(f"❌ Could not extract file_id from: {link}")
-                continue
-
-            try:
-                # ✅ Step 1: Get metadata (original file name + type)
-                meta = drive_service.files().get(
-                    fileId=file_id,
-                    fields="name,mimeType"
-                ).execute()
-                print(meta)  
-
-                orig_name = meta.get("name", f"{file_id}.pdf")  # fallback if no name
-                mime_type = meta.get("mimeType")
-
-                # ✅ Step 2: Prepare download request
-                request = drive_service.files().get_media(fileId=file_id)
-
-                # ✅ Step 3: Download file
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
-
-                fh.seek(0)
-
-                # ✅ Step 4: Save using original filename
-                file_path = Path("resumes/from_drive") / orig_name
-                with open(file_path, "wb") as f:
-                    f.write(fh.read())
-
-                print(f"✅ Saved with original name: {file_path}")
-                downloaded_resumes.append(str(file_path))
-
-            except Exception as e:
-                print(f"❌ Failed to download {link}: {e}")
-
-        return downloaded_resumes
-
-    except Exception as e:
-        print("❌ Error in fetch_from_drive:", e)
-        traceback.print_exc()
-        return []
-                                                                                                                                                            
+        # Prepare data for bulk update
+        rows_to_update = []
+        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
+        for i, candidate in enumerate(candidate_data, 1):
+            # Format skills as comma-separated string
+            skills_str = ', '.join(candidate.get('skills', [])[:5]) if candidate.get('skills') else 'Not analyzed'
+            
+            row = [
+                i,  # Serial No
+                candidate.get('name', 'Not found'),
+                candidate.get('mobile', 'Not found'), 
+                candidate.get('email', 'Not found'),
+                candidate.get('address', 'Not found'),
+                candidate.get('stipend', 'Not specified'),
+                candidate.get('final_score', 0),
+                candidate.get('similarity_score', 0),
+                candidate.get('experience', '0'),
+                skills_str,
+                candidate.get('rank', ''),
+                current_date,
+                'Processed' if candidate.get('final_score', 0) > 0 else 'Pending'
+            ]
+            rows_to_update.append(row)
+        
+        # Update all rows at once (more efficient)
+        if rows_to_update:
+            range_name = f'A2:M{len(rows_to_update) + 1}'
+            analysis_sheet.update(range_name, rows_to_update)
+            
+            print(f"✅ Updated candidate analysis sheet with {len(rows_to_update)} records")
+            
+            # Apply conditional formatting for final scores
+            try:
+                # Format final score column (G) with colors
+                analysis_sheet.format('G:G', {
+                    'numberFormat': {
+                        'type': 'NUMBER',
+                        'pattern': '0.00'
+                    }
+                })
+                
+                print("✅ Applied formatting to analysis sheet")
+                
+            except Exception as format_error:
+                print(f"⚠️ Formatting failed (data still saved): {format_error}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error updating analysis sheet: {e}")
+        return False
 
 def fetch_from_folder(state: ResumeState) -> ResumeState:
     """
@@ -259,50 +1437,8 @@ def manual_upload(state: ResumeState) -> ResumeState:
     """
     Handle manual file upload (placeholder for web interface)
     """
-    # This would be implemented in your web interface
     print("✅ Manual upload selected")
     return state
-
-# =============================================================================
-# 2. RESUME PROCESSING FUNCTIONS
-# =============================================================================
-
-import os
-import re
-import pdfplumber
-from typing import Dict  # Adjust if you have a custom ResumeState type
-
-
-# ✅ Reusable function (can be imported anywhere)
-def extract_text_from_pdf(filepath: str) -> str:
-    """
-    Extracts text from a PDF file using pdfplumber.
-    """
-    if not os.path.exists(filepath):
-        raise FileNotFoundError(f"File not found: {filepath}")
-
-    with pdfplumber.open(filepath) as pdf:
-        text = "\n".join(
-            [page.extract_text() for page in pdf.pages if page.extract_text()]
-        )
-    return text
-
-
-
-
-
-
-
-
-
-
-
-import os
-import re
-import json
-import pdfplumber
-from typing import Dict
-from langchain_groq import ChatGroq
 
 def extract_text_from_pdf(filepath: str) -> str:
     """
@@ -644,7 +1780,6 @@ Rules:
             "name": "Not found",
             "address": "Not found"
         }
-###############################################################################################################################################################################    
 
 def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
     """
@@ -654,56 +1789,38 @@ def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
 
     try:
         resume_text = state.get("resume_text", "")
+        
+        if not resume_text.strip():
+            print("❌ No resume text found")
+            return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
 
-        prompt =PromptTemplate.from_template("""
-You are an expert resume parser. Extract the following information from the resume text:
+        prompt = PromptTemplate.from_template("""
+You are an information extraction system.  
+Your task is to read the resume text and extract exactly this data:  
+- Top 10 relevant skills (list of strings)  
+- Education level (string)  
+- total_experience_years: Total professional work experience in years (string, e.g., "2", "3.5", "0")
 
-SKILLS: List the top 10 most relevant technical and professional skills mentioned in the resume.
+Rules for total_experience_years:
+1. Count ONLY if the resume explicitly states the duration in years/months or has start and end dates.
+2. If duration is in months, convert to years with one decimal place (e.g., "5 months" → "0.4").
+3. If multiple experiences are listed, sum them up.
+4. Do NOT infer or guess based on skills, job titles, or education.
+5. If no explicit duration is mentioned, return "0".
+6. Never round up — keep the exact lower bound.
 
-EDUCATION: Extract the HIGHEST degree/qualification from education section. Priority order:
-1. PhD/Doctorate
-2. Masters/M.Tech/MBA
-3. Bachelor's/B.Tech/B.E./B.Sc
-4. Diploma
-5. Certificate courses
-Format as: "Degree Field" (e.g., "B.Tech Computer Science", "Masters Data Science")
-
-EXPERIENCE: Calculate total work experience in years (include internships and full-time jobs).
-
-EXPERIENCE CALCULATION RULES:
-1. Count ALL work experience including: Full-time jobs, Internships, Part-time roles
-2. EXCLUDE: Academic projects, personal projects, training courses, education duration
-3. Parse date ranges carefully:
-   - "Feb-Sep 2024" = Feb to Sep = 7 months = 0.6 years
-   - "Jan 2022 - Dec 2024" = 3.0 years
-   - "Mar 2021 - Present" = calculate from March 2021 to current date
-4. Convert months to decimal accurately: 
-   - 6 months = 0.5 years, 7 months = 0.6 years, 8 months = 0.7 years
-   - 12 months = 1.0 year
-5. Sum all qualifying work experiences (jobs + internships)
-6. If no work experience found, return "0"
-
-INTERNSHIP HANDLING:
-- Internships COUNT as work experience
-- Include internship duration in total experience calculation
-
-DATE PARSING EXAMPLES:
-- "Feb-Sep 2024" (7 months internship) = 0.6 years experience
-- "Software Engineer Jan 2022 - Dec 2023" = 2.0 years
-- "Data Scientist Mar 2021 - Present" = calculate current duration
-- "Intern Jun-Dec 2023" (6 months) = 0.5 years experience
-
-IMPORTANT NOTES:
-- Count both internships and full-time jobs as work experience
-- Calculate experience based on actual date ranges
-- For education, always pick the highest degree mentioned
-- 7 months = 0.6 years (7/12 = 0.58 ≈ 0.6)
+You must respond with **only valid JSON**. No explanation. No extra words.  
+If a field is missing in the resume, use defaults: [] for skills, "Unknown" for education, "0" for experience.  
 
 Resume:
 {resume}
 
-Expected JSON format:
-{{"skills": ["skill1", "skill2"], "education": "degree", "experience": "years"}}
+JSON response format (strictly follow this):
+{{
+  "skills": ["Python", "TensorFlow", "..."],
+  "education": "Bachelor of Pharmacy",
+  "experience": "0.8"
+}}
 """)
 
         chain = prompt | llm
@@ -711,146 +1828,50 @@ Expected JSON format:
         raw_response = response.content.strip()
         print("✅ LLM raw response:\n", raw_response)
 
-        # Robust JSON extraction - all methods in one function
+        raw_response = re.sub(r"```(json)?", "", raw_response).strip()
+        
+        if "{" in raw_response and "}" in raw_response:
+            start_idx = raw_response.find("{")
+            end_idx = raw_response.rfind("}") + 1
+            json_str = raw_response[start_idx:end_idx]
+        else:
+            json_str = raw_response
+
+        print("✅ Extracted JSON string:\n", json_str)
+
         analysis_dict = None
-        
-        # Method 1: Handle LLM prefixes and extract JSON
         try:
-            print(f"🔍 Raw response length: {len(raw_response)}")
-            
-            # Remove markdown code blocks
-            cleaned_response = re.sub(r'```(?:json)?\s*', '', raw_response, flags=re.IGNORECASE)
-            cleaned_response = re.sub(r'\s*```', '', cleaned_response)
-            
-            # Remove common prefixes that LLMs add
-            prefixes_to_remove = [
-                r"Here is the extracted (?:data|information) in (?:the requested )?JSON format:?\s*",
-                r"Here's the extracted (?:data|information):?\s*",
-                r"The extracted (?:data|information) in JSON format is:?\s*",
-                r"JSON response:?\s*",
-                r"Response:?\s*"
-            ]
-            
-            for prefix in prefixes_to_remove:
-                cleaned_response = re.sub(prefix, '', cleaned_response, flags=re.IGNORECASE)
-            
-            cleaned_response = cleaned_response.strip()
-            print(f"🧹 Cleaned response:\n{cleaned_response[:300]}...")
-            
-            # Find JSON boundaries - robust approach
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned_response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                print(f"✅ Found JSON block:\n{json_str}")
-                
-                # Try parsing with json.loads
-                analysis_dict = json.loads(json_str)
-                print("✅ Method 1: Successfully parsed with json.loads")
-                
+            analysis_dict = json.loads(json_str)
+            print("✅ JSON parsing successful")
         except json.JSONDecodeError as e:
-            print(f"❌ Method 1 JSON decode error: {e}")
-        except Exception as e:
-            print(f"❌ Method 1 failed: {e}")
-        
-        # Method 2: Line-by-line approach if Method 1 failed
-        if analysis_dict is None:
+            print(f"❌ JSON decode error: {e}")
             try:
-                lines = raw_response.split('\n')
-                json_started = False
-                json_lines = []
-                brace_count = 0
-                
-                for line in lines:
-                    line = line.strip()
-                    if not json_started and line.startswith('{'):
-                        json_started = True
-                        json_lines.append(line)
-                        brace_count += line.count('{') - line.count('}')
-                    elif json_started:
-                        json_lines.append(line)
-                        brace_count += line.count('{') - line.count('}')
-                        if brace_count == 0:
-                            break
-                
-                if json_lines:
-                    json_str = '\n'.join(json_lines)
-                    print(f"🔧 Method 2 JSON:\n{json_str}")
-                    
-                    try:
-                        analysis_dict = json.loads(json_str)
-                        print("✅ Method 2: Successfully parsed with json.loads")
-                    except:
-                        # Try with ast.literal_eval
-                        try:
-                            analysis_dict = ast.literal_eval(json_str)
-                            print("✅ Method 2: Successfully parsed with ast.literal_eval")
-                        except Exception as e2:
-                            print(f"❌ Method 2 ast error: {e2}")
-                            
-            except Exception as e:
-                print(f"❌ Method 2 failed: {e}")
-        
-        # Method 3: Manual regex extraction (last resort)
-        if analysis_dict is None:
-            try:
-                print("🔧 Attempting manual regex extraction...")
-                
-                # Extract skills array
-                skills_pattern = r'"skills":\s*\[(.*?)\]'
-                skills_match = re.search(skills_pattern, raw_response, re.DOTALL)
-                skills = []
-                if skills_match:
-                    skills_content = skills_match.group(1)
-                    # Extract individual skill items
-                    skill_items = re.findall(r'"([^"]+)"', skills_content)
-                    skills = skill_items
-                    print(f"✅ Extracted skills: {skills}")
-                
-                # Extract education
-                edu_pattern = r'"education":\s*"([^"]*)"'
-                edu_match = re.search(edu_pattern, raw_response)
-                education = edu_match.group(1) if edu_match else "Unknown"
-                print(f"✅ Extracted education: {education}")
-                
-                # Extract experience
-                exp_pattern = r'"experience":\s*"([^"]*)"'
-                exp_match = re.search(exp_pattern, raw_response)
-                experience = exp_match.group(1) if exp_match else "0"
-                print(f"✅ Extracted experience: {experience}")
-                
+                analysis_dict = ast.literal_eval(json_str)
+                print("✅ AST parsing successful")
+            except Exception as e2:
+                print(f"❌ AST parsing also failed: {e2}")
                 analysis_dict = {
-                    "skills": skills,
-                    "education": education,
-                    "experience": experience
+                    "skills": [],
+                    "education": "Unknown",
+                    "experience": "0"
                 }
-                print("✅ Manual extraction successful")
+
+        if analysis_dict:
+            analysis_dict.setdefault("skills", [])
+            analysis_dict.setdefault("education", "Unknown")
+            analysis_dict.setdefault("experience", "0")
+            
+            if not isinstance(analysis_dict["skills"], list):
+                analysis_dict["skills"] = []
                 
-            except Exception as e:
-                print(f"❌ Manual extraction failed: {e}")
-        
-        # Final fallback to defaults if all methods failed
-        if analysis_dict is None:
-            print("⚠️ All extraction methods failed, using defaults")
+            print("✅ Final parsed analysis:\n", analysis_dict)
+        else:
             analysis_dict = {
                 "skills": [],
-                "education": "Unknown",
+                "education": "Unknown", 
                 "experience": "0"
             }
 
-        # Ensure all required keys exist and have correct types
-        analysis_dict.setdefault("skills", [])
-        analysis_dict.setdefault("education", "Unknown")
-        analysis_dict.setdefault("experience", "0")
-        
-        # Validate types
-        if not isinstance(analysis_dict["skills"], list):
-            analysis_dict["skills"] = []
-        if not isinstance(analysis_dict["education"], str):
-            analysis_dict["education"] = "Unknown"
-        if not isinstance(analysis_dict["experience"], str):
-            analysis_dict["experience"] = str(analysis_dict["experience"])
-
-        print("✅ Final parsed analysis:\n", analysis_dict)
         return {**state, "analysis": analysis_dict}
 
     except Exception as e:
@@ -858,32 +1879,71 @@ Expected JSON format:
         import traceback
         traceback.print_exc()
         return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
+
 def compute_similarity(state: ResumeState) -> ResumeState:
     """
     Compute similarity between resume and job description
     """
-    jd = state.get("jd_text", "")
-    resume = state.get("resume_text", "")
+    jd = state.get("jd_text", "").strip()
+    resume = state.get("resume_text", "").strip()
+    
+    print(f"✅ JD length: {len(jd)} characters")
+    print(f"✅ Resume length: {len(resume)} characters")
+    
+    if not jd or not resume:
+        print("❌ Missing JD or resume text")
+        return {
+            **state,
+            "llm_score": 0,
+            "embedding_score": 0,
+            "similarity_score": 0
+        }
     
     def is_valid_resume(text):
         if len(text.strip().split()) < 50:
+            print("❌ Resume too short")
             return False
         keywords = ['education', 'experience', 'skills', 'project', 'certification']
-        return any(kw in text.lower() for kw in keywords)
+        has_keywords = any(kw in text.lower() for kw in keywords)
+        print(f"✅ Resume has keywords: {has_keywords}")
+        return has_keywords
     
-    def embedding_similarity(jd, resume):
+    def embedding_similarity(jd_text, resume_text):
         try:
-            embed = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-            jd_vec = embed.embed_query(jd)
-            res_vec = embed.embed_query(resume)
+            print("🔄 Computing embedding similarity...")
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+            
+            embed = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                model_kwargs={'device': 'cpu'}
+            )
+            
+            print("🔄 Creating embeddings...")
+            jd_vec = embed.embed_query(jd_text)
+            res_vec = embed.embed_query(resume_text)
+            
+            print(f"✅ JD embedding shape: {len(jd_vec)}")
+            print(f"✅ Resume embedding shape: {len(res_vec)}")
+            
+            from sklearn.metrics.pairwise import cosine_similarity
+            import numpy as np
+            
             score = cosine_similarity([jd_vec], [res_vec])[0][0]
-            print(f"✅ Embedding similarity score: {score}")
-            return round(score * 10, 2)  # Normalize to 0–10 scale
+            normalized_score = round(float(score) * 10, 2)
+            
+            print(f"✅ Raw cosine similarity: {score}")
+            print(f"✅ Normalized embedding score (0-10): {normalized_score}")
+            
+            return normalized_score
+            
         except Exception as e:
             print(f"❌ Embedding similarity failed: {e}")
+            import traceback
+            traceback.print_exc()
             return 0
     
     if not is_valid_resume(resume):
+        print("❌ Resume validation failed")
         return {
             **state,
             "llm_score": 0,
@@ -891,28 +1951,39 @@ def compute_similarity(state: ResumeState) -> ResumeState:
             "similarity_score": 0
         }
 
-    # 1. LLM-based similarity
+    llm_score = 0
     try:
+        print("🔄 Computing LLM similarity...")
         prompt = PromptTemplate.from_template("""
-        Given the job description: {jd}
-        And the resume: {resume}
-        How well does the resume match the job description?
-        Return a score from 0 to 10.
+        Analyze how well this resume matches the job description and provide a score from 0 to 10.
+        
+        Job Description: {jd}
+        
+        Resume: {resume}
+        
+        Respond with ONLY a single number from 0 to 10 (no explanation).
         """)
         chain = prompt | llm
         response = chain.invoke({"jd": jd, "resume": resume})
-        match = re.search(r"\b([0-9]{1,2})\b", response.content)
-        llm_score = int(match.group(1)) if match else 0
+        
+        import re
+        numbers = re.findall(r'\b([0-9](?:\.[0-9])?|10(?:\.0)?)\b', response.content)
+        if numbers:
+            llm_score = float(numbers[0])
+            print(f"✅ LLM score extracted: {llm_score}")
+        else:
+            print(f"❌ No valid score found in LLM response: {response.content}")
+            llm_score = 0
+            
     except Exception as e:
         print(f"❌ LLM similarity failed: {e}")
         llm_score = 0
 
-    # 2. Embedding-based similarity
     embed_score = embedding_similarity(jd, resume)
 
-    # 3. Combined score
-    combined_score = round(0.5 * llm_score + 0.5 * embed_score, 2)
-    print(f"✅ LLM score: {llm_score}, Embedding score: {embed_score}, Combined score: {combined_score}")
+    combined_score = round(0.6 * llm_score + 0.4 * embed_score, 2)
+    
+    print(f"✅ Final scores - LLM: {llm_score}, Embedding: {embed_score}, Combined: {combined_score}")
     
     return {
         **state,
@@ -927,7 +1998,7 @@ def classify_resume(state: ResumeState) -> ResumeState:
     """
     try:
         prompt = PromptTemplate.from_template("""
-        Classify the resume below into **only one** job category from this list, based on how well it matches the provided job description:
+        Classify the resume below into **only one** job category from this list:
 
         - AI Engineer
         - Data Analyst
@@ -953,90 +2024,27 @@ def classify_resume(state: ResumeState) -> ResumeState:
         Only return one of the above job categories exactly as-is. No explanation.
         """)
         chain = prompt | llm
-        response = chain.invoke({"jd": state.get("jd_text", ""), "resume": state.get("resume_text", "")})
-        job_type = response.content.strip()
+        response = chain.invoke({
+            "jd": state.get("jd_text", ""), 
+            "resume": state.get("resume_text", "")
+        })
+
+        job_type = getattr(response, "content", response).strip()
         print(f"✅ Classified job type: {job_type}")
+
         return {**state, "job_type": job_type}
+
     except Exception as e:
+        import traceback
         print(f"❌ Classification failed: {e}")
+        traceback.print_exc()
         return {**state, "job_type": "Unknown"}
-
-# def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
-#     """
-#     Extract skills, education, and experience from resume
-#     """
-#     try:
-#         prompt = PromptTemplate.from_template("""
-#         You are an information extraction system.  
-#         From the resume text below, extract exactly the following fields and return ONLY valid JSON (no extra words, no explanation):  
-
-#         - **skills** → Top 10 most relevant technical or professional skills (list of strings).  
-#         - **education** → Highest education level mentioned (string).  
-#         - "experience" → Calculate the total professional work experience in years (with 1 decimal precision). Follow these rules strictly:
-#     1. Identify all periods of professional employment from the resume.
-#        - Include internships only if they are labeled as work experience or have start and end dates.
-#        - Ignore academic projects, coursework, certifications, and volunteer activities unless labeled as work experience.
-#     2. For each date range:
-#        - Convert start and end months to numeric values.
-#        - If only the year is given (e.g., "2020 – 2021"), assume January for start month and December for end month.
-#        - If month is missing but year is given for end date, assume December.
-#        - If month is missing but year is given for start date, assume January.
-#        - If end date is "Present" or "Current", use the current month and year.
-#     3. Calculate the month difference, then convert to years with 1 decimal:
-#        - Example: 4 months → 0.3 years, 6 months → 0.5 years, 18 months → 1.5 years.
-#     4. If periods overlap, count the overlapping months only once.
-#     5. Sum all non-overlapping periods to get total experience.
-#     6. Output as a decimal string (e.g., "0.4", "2.0", "5.3").
-#     7. Never round up to the next year.
-
-#         Resume:
-#         {resume}
-
-#         Respond ONLY in this JSON format:
-#         {{
-#         "skills": ["Python", "TensorFlow", "..."],
-#         "education": "Bachelor of Pharmacy",
-#         "experience": "0.8"
-#         }}
-#         """)
-
-
-#         chain = prompt | llm
-#         response = chain.invoke({"resume": state.get("resume_text", "")})
-        
-#         print("✅ LLM raw response:\n", response.content)
-
-#         try:
-#             analysis_dict = json.loads(response.content)
-#         except json.JSONDecodeError:
-#             try:
-#                 import ast
-#                 analysis_dict = ast.literal_eval(response.content)
-#             except Exception:
-#                 analysis_dict = {
-#                     "skills": [],
-#                     "education": "Unknown",
-#                     "experience": "0"
-#                 }
-
-#         print("✅ Final parsed analysis:\n", analysis_dict)
-#         return {**state, "analysis": analysis_dict}
-        
-#     except Exception as e:
-#         print(f"❌ Analysis failed: {e}")
-#         return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
-
-
-
-
-
-
 
 def score_resume(state: ResumeState) -> ResumeState:
     """
     Calculate final score for the resume
     """
-    MIN_SIMILARITY_THRESHOLD = 5  # Adjust as needed
+    MIN_SIMILARITY_THRESHOLD = 5
     
     def extract_required_experience(jd_text):
         match = re.search(r"(\d+)[+\s]*years? of experience", jd_text.lower())
@@ -1045,33 +2053,27 @@ def score_resume(state: ResumeState) -> ResumeState:
     similarity = state.get("similarity_score", 0)
     analysis = state.get("analysis", {})
 
-    # Step 1: Filter out irrelevant resumes
     if similarity < MIN_SIMILARITY_THRESHOLD:
         return {**state, "score": 0, "experience_filtered": False}
     
     print(f"✅ Similarity score: {similarity}")
 
-    # Step 2: Extract experience from resume
     exp_str = analysis.get("experience", "0")
     match = re.search(r"[\d.]+", exp_str)
     exp_years = float(match.group()) if match else 0.0
 
-    # Step 3: Extract required experience from JD
     required_exp = extract_required_experience(state.get("jd_text", ""))
     if required_exp is not None and exp_years < required_exp:
         return {**state, "score": 0, "experience_filtered": True}
 
-    # Step 4: Count skills
     skills = analysis.get("skills", [])
     skills_count = len(skills)
 
-    # Step 5: Normalize scores (all between 0 and 1)
     normalized_similarity = min(similarity / 10.0, 1.0)
     normalized_exp = min(exp_years / 10.0, 1.0)
     normalized_skills = min(skills_count / 10.0, 1.0)
 
-    # Step 6: Weighted score calculation (final score 0–10)
-    weighted_score = (0.5 * normalized_similarity) + \
+    weighted_score = (0.4 * normalized_similarity) + \
                      (0.2 * normalized_exp) + \
                      (0.3 * normalized_skills)
 
@@ -1085,10 +2087,6 @@ def score_resume(state: ResumeState) -> ResumeState:
         "experience_filtered": False
     }
 
-# =============================================================================
-# 3. UTILITY FUNCTIONS
-# =============================================================================
-
 def save_feedback(resume_id, feedback):
     """Save feedback for a resume"""
     with open("feedback.json", "a") as f:
@@ -1096,56 +2094,17 @@ def save_feedback(resume_id, feedback):
 
 def rank_top_candidates(processed_resumes):
     """Rank candidates based on their scores"""
-    # Only use already scored resumes
     scored_resumes = [res for res in processed_resumes if res.get("score", 0) > 0]
-
-    # Sort by score
     scored_resumes.sort(key=lambda x: x["score"], reverse=True) 
 
-    # Assign rank
     for i, res in enumerate(scored_resumes, 1):
         res["rank"] = i
 
-    return scored_resumes[:10]  # Top 10 candidates
+    return scored_resumes[:10]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# =============================================================================
+# TESTING FUNCTIONS
+# =============================================================================
 
 
 
