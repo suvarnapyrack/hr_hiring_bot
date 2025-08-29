@@ -504,7 +504,8 @@ from googleapiclient.http import MediaIoBaseDownload
 #         print("❌ Test failed - no results returned")
     
 #     return results
-def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
+##############################################################################################################################################################################
+def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=500):
     """
     Extract candidate data from main sheet including stipend and experience
     Added limit parameter to process only first N candidates
@@ -544,8 +545,8 @@ def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
             print("✅ Found existing tracking sheet")
         except:
             print("🆕 Creating new tracking sheet...")
-            tracking_sheet = sh.add_worksheet(title="processing_tracker", rows=1000, cols=8)
-            headers = ['Row_Number', 'Name', 'Email', 'Mobile', 'Processing_Status', 'Processing_Date', 'Final_Score', 'Resume_URL']
+            tracking_sheet = sh.add_worksheet(title="processing_tracker", rows=3000, cols=8)
+            headers = ['Row_Number', 'Name', 'Email', 'Mobile', 'Processing_Status','address','stipend','experience','Processing_Date', 'Final_Score', 'Resume_URL']
             tracking_sheet.insert_row(headers, 1)
             print("✅ Created new tracking sheet")
         
@@ -558,20 +559,29 @@ def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
             tracking_data = tracking_sheet.get_all_records()
             for record in tracking_data:
                 if record.get('Processing_Status') == 'COMPLETED':
-                    email = str(record.get('Email', '')).strip().lower()
-                    mobile = str(record.get('Mobile', '')).strip()
+                    # ✅ FIXED: Handle case-sensitive field names and multiple possible keys
+                    email = str(record.get('Email', record.get('email', ''))).strip().lower()
+                    mobile = str(record.get('Mobile', record.get('mobile', ''))).strip()
+                    
+                    # ✅ ADDED: Extract address, stipend, experience from tracking sheet
+                    address = str(record.get('address', record.get('Address', ''))).strip()
+                    stipend = str(record.get('stipend', record.get('Stipend', ''))).strip()
+                    experience = str(record.get('experience', record.get('Experience', ''))).strip()
+                    
                     if email and email != 'not found':
                         processed_emails.add(email)
                     if mobile and mobile != 'not found':
                         processed_mobiles.add(mobile)
                     
-                    row_num = record.get('Row_Number', 0)
+                    # ✅ FIXED: Handle Row_Number field name variations
+                    row_num = record.get('Row_Number', record.get('row_number', 0))
                     if isinstance(row_num, (int, float)) and row_num > last_row_processed:
                         last_row_processed = int(row_num)
             
             print(f"📊 Found {len(processed_emails)} processed emails, {len(processed_mobiles)} processed mobiles")
             print(f"📍 Last row processed: {last_row_processed}")
-        except:
+        except Exception as tracking_error:
+            print(f"📊 Error reading tracking data: {tracking_error}")
             print("📊 No previous processing data found")
         
         # Get all data from main sheet
@@ -638,7 +648,7 @@ def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
             elif any(x in col_lower for x in ['stipend', 'salary', 'expected', 'amount', 'pay']) and not stipend_col:
                 stipend_col = col
                 print(f"✅ Stipend column: {col}")
-            elif any(x in col_lower for x in ['experience', 'exp', 'years', 'work']) and not experience_col:
+            elif any(x in col_lower for x in ['experience', 'exp', 'years']) and 'work' not in col_lower and not experience_col:
                 experience_col = col
                 print(f"✅ Experience column: {col}")
         
@@ -726,9 +736,10 @@ def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
                 print(f"{i}. Name: {candidate['name']} (Row: {candidate['original_row_number']})")
                 print(f"   Email: {candidate['email']}")
                 print(f"   Mobile: {candidate['mobile']}")
+                print(f"   Address: {candidate['address']}")  # ✅ ADDED
                 print(f"   Stipend: {candidate['stipend']}")
                 print(f"   Experience: {candidate['experience']}")
-                print(f"   Resume URL: {candidate['resume_url'][:50]}..." if len(candidate['resume_url']) > 50 else f"   Resume URL: {candidate['resume_url']}")
+                print(f"   Resume URL: {candidate['resume_url'][:500]}..." if len(candidate['resume_url']) > 500 else f"   Resume URL: {candidate['resume_url']}")
                 print()
         
         return candidate_data, gc, main_sheet_id, tracking_sheet
@@ -738,9 +749,640 @@ def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=5):
         import traceback
         traceback.print_exc()
         return [], None, None, None
+# def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=100):
+#     """
+#     Extract candidate data from main sheet including stipend and experience
+#     Added limit parameter to process only first N candidates
+#     UPDATED: Now includes tracking sheet creation and duplicate checking
+#     """
+#     SCOPES = [
+#         'https://www.googleapis.com/auth/spreadsheets',
+#         'https://www.googleapis.com/auth/drive'
+#     ]
+    
+#     # Define constants first
+#     CREDENTIALS_PATH = r"D:\hr_chatboat\credentials.json"
+#     MAIN_SHEET_ID = "12iGOUPpqLHi-olf7qfiTm4I-ZCEaLpzpfB0WCvaTSRw"
+
+#     try:
+#         print(f"🔄 Extracting candidate data from main sheet (limit: {limit})...")
+
+#         # Authenticate
+#         creds = service_account.Credentials.from_service_account_file(
+#             CREDENTIALS_PATH, scopes=SCOPES
+#         )
+#         gc = gspread.authorize(creds)
+
+#         # Use provided sheet ID or default
+#         if not main_sheet_id:
+#             main_sheet_id = MAIN_SHEET_ID
+        
+#         print(f"📊 Using main sheet ID: {main_sheet_id}")
+        
+#         # Read main sheet
+#         sh = gc.open_by_key(main_sheet_id)
+#         ws = sh.sheet1
+        
+#         # ✅ NEW: Create or get tracking sheet
+#         try:
+#             tracking_sheet = sh.worksheet("processing_tracker")
+#             print("✅ Found existing tracking sheet")
+#         except:
+#             print("🆕 Creating new tracking sheet...")
+#             tracking_sheet = sh.add_worksheet(title="processing_tracker", rows=3000, cols=8)
+#             headers = ['Row_Number', 'Name', 'Email', 'Mobile', 'Processing_Status','address','stipend','experience','Processing_Date', 'Final_Score', 'Resume_URL']
+#             tracking_sheet.insert_row(headers, 1)
+#             print("✅ Created new tracking sheet")
+        
+#         # ✅ NEW: Get already processed candidates
+#         processed_emails = set()
+#         processed_mobiles = set()
+#         last_row_processed = 0
+        
+#         try:
+#             tracking_data = tracking_sheet.get_all_records()
+#             for record in tracking_data:
+#                 if record.get('Processing_Status') == 'COMPLETED':
+#                     email = str(record.get('Email', '')).strip().lower()
+#                     mobile = str(record.get('Mobile', '')).strip()
+                    
+#                     if email and email != 'not found':
+#                         processed_emails.add(email)
+#                     if mobile and mobile != 'not found':
+#                         processed_mobiles.add(mobile)
+                   
+
+#                     row_num = record.get('Row_Number', 0)
+#                     if isinstance(row_num, (int, float)) and row_num > last_row_processed:
+#                         last_row_processed = int(row_num)
+            
+#             print(f"📊 Found {len(processed_emails)} processed emails, {len(processed_mobiles)} processed mobiles")
+#             print(f"📍 Last row processed: {last_row_processed}")
+#         except:
+#             print("📊 No previous processing data found")
+        
+#         # Get all data from main sheet
+#         all_data = ws.get_all_records()
+#         df = pd.DataFrame(all_data)
+        
+#         # Remove completely empty rows
+#         df = df.dropna(how='all')
+
+#         # ✅ NEW: Add row numbers for tracking and filter from last processed + 1
+#         df = df.reset_index(drop=True)
+#         df['original_row_number'] = df.index + 2  # +2 because Excel starts at 1 and has header
+        
+#         # Start from next unprocessed row
+#         start_from_row = last_row_processed + 1
+#         if start_from_row > 2:  # 2 because first data row is 2
+#             df = df[df['original_row_number'] >= start_from_row]
+#             print(f"📊 Starting from row {start_from_row} (continuing from last run)")
+        
+#         # Apply limit (only first N candidates)
+#         if limit and limit > 0:
+#             df = df.head(limit)
+#             print(f"📊 Limited to first {limit} rows")
+        
+#         print(f"✅ Main sheet columns: {df.columns.tolist()}")
+#         print(f"📊 Total rows after removing empty and applying limit: {len(df)}")
+        
+#         if len(df) == 0:
+#             print("❌ No new data found in main sheet (all candidates may be already processed)")
+#             return [], gc, main_sheet_id, tracking_sheet
+        
+#         # Column mapping - find best matching columns
+#         name_col = None
+#         mobile_col = None
+#         email_col = None
+#         address_col = None
+#         resume_col = None
+#         stipend_col = None
+#         experience_col = None
+        
+#         # Find columns with flexible matching
+#         for col in df.columns:
+#             if col == 'original_row_number':
+#                 continue
+                
+#             col_lower = col.lower().strip()
+#             print(f"🔍 Checking column: '{col}' -> '{col_lower}'")
+            
+#             if 'name' in col_lower and not name_col:
+#                 name_col = col
+#                 print(f"✅ Name column: {col}")
+#             elif any(x in col_lower for x in ['mobile', 'phone', 'number']) and not mobile_col:
+#                 mobile_col = col
+#                 print(f"✅ Mobile column: {col}")
+#             elif 'email' in col_lower and not email_col:
+#                 email_col = col
+#                 print(f"✅ Email column: {col}")
+#             elif any(x in col_lower for x in ['address', 'location']) and not address_col:
+#                 address_col = col
+#                 print(f"✅ Address column: {col}")
+#             elif any(x in col_lower for x in ['resume', 'url', 'link', 'cv']) and not resume_col:
+#                 resume_col = col
+#                 print(f"✅ Resume column: {col}")
+#             elif any(x in col_lower for x in ['stipend', 'salary', 'expected', 'amount', 'pay']) and not stipend_col:
+#                 stipend_col = col
+#                 print(f"✅ Stipend column: {col}")
+#             elif any(x in col_lower for x in ['experience', 'exp', 'years', 'work']) and not experience_col:
+#                 experience_col = col
+#                 print(f"✅ Experience column: {col}")
+        
+#         print(f"\n📋 Final Column Mapping:")
+#         print(f"   Name: {name_col}")
+#         print(f"   Mobile: {mobile_col}")
+#         print(f"   Email: {email_col}")
+#         print(f"   Address: {address_col}")
+#         print(f"   Resume: {resume_col}")
+#         print(f"   Stipend: {stipend_col}")
+#         print(f"   Experience: {experience_col}")
+        
+#         # Extract candidate data with all fields
+#         candidate_data = []
+#         for idx, row in df.iterrows():
+#             original_row = row.get('original_row_number', idx + 2)
+            
+#             # Extract all data with safe fallbacks
+#             name_val = str(row.get(name_col, '')).strip() if name_col else ''
+#             mobile_val = str(row.get(mobile_col, '')).strip() if mobile_col else ''
+#             email_val = str(row.get(email_col, '')).strip() if email_col else ''
+#             address_val = str(row.get(address_col, '')).strip() if address_col else ''
+#             resume_val = str(row.get(resume_col, '')).strip() if resume_col else ''
+#             stipend_val = str(row.get(stipend_col, '')).strip() if stipend_col else ''
+#             experience_val = str(row.get(experience_col, '')).strip() if experience_col else ''
+            
+#             # Skip completely empty rows
+#             if not any([name_val, mobile_val, email_val, resume_val]):
+#                 print(f"⚠️ Skipping empty row {original_row}")
+#                 continue
+            
+#             # Clean up 'nan' and empty values
+#             def clean_value(val, default='Not found'):
+#                 if val in ['nan', 'None', 'null', '', 'NaN']:
+#                     return default
+#                 return val
+            
+#             name_val = clean_value(name_val)
+#             mobile_val = clean_value(mobile_val)
+#             email_val = clean_value(email_val)
+#             address_val = clean_value(address_val)
+#             resume_val = clean_value(resume_val, '')
+#             stipend_val = clean_value(stipend_val, 'Not specified')
+#             experience_val = clean_value(experience_val, 'Not specified')
+            
+#             # ✅ NEW: Check if candidate already processed
+#             email_check = email_val.lower().strip() if email_val != 'Not found' else None
+#             mobile_check = mobile_val.strip() if mobile_val != 'Not found' else None
+            
+#             if (email_check and email_check in processed_emails) or (mobile_check and mobile_check in processed_mobiles):
+#                 print(f"⏭️ Skipping already processed candidate: {name_val} (Row: {original_row})")
+#                 continue
+            
+#             # Create candidate info with ALL required fields
+#             candidate_info = {
+#                 # ✅ NEW: Add tracking info
+#                 'original_row_number': original_row,
+                
+#                 # From Main Sheet
+#                 'name': name_val,
+#                 'mobile': mobile_val,
+#                 'email': email_val,
+#                 'address': address_val,
+#                 'resume_url': resume_val,
+#                 'stipend': stipend_val,          # ✅ FROM MAIN SHEET
+#                 'experience': experience_val,    # ✅ FROM MAIN SHEET
+                
+#                 # From LangGraph (will be updated during processing)
+#                 'skills': [],
+#                 'education': '',
+#                 'final_score': 0,
+#                 'similarity_score': 0,
+#                 'rank': ''
+#             }
+            
+#             candidate_data.append(candidate_info)
+#             print(f"✅ Added candidate {len(candidate_data)}: {name_val} (Row: {original_row}) | Email: {email_val} | Stipend: {stipend_val} | Experience: {experience_val}")
+        
+#         print(f"\n✅ Extracted {len(candidate_data)} NEW candidates from main sheet (limited to {limit})")
+        
+#         # Debug: Show first few candidates
+#         if candidate_data:
+#             print("\n📋 First 3 NEW candidates extracted:")
+#             for i, candidate in enumerate(candidate_data[:3], 1):
+#                 print(f"{i}. Name: {candidate['name']} (Row: {candidate['original_row_number']})")
+#                 print(f"   Email: {candidate['email']}")
+#                 print(f"   Mobile: {candidate['mobile']}")
+#                 print(f"   Stipend: {candidate['stipend']}")
+#                 print(f"   Experience: {candidate['experience']}")
+#                 print(f"   Resume URL: {candidate['resume_url'][:50]}..." if len(candidate['resume_url']) > 50 else f"   Resume URL: {candidate['resume_url']}")
+#                 print()
+        
+#         return candidate_data, gc, main_sheet_id, tracking_sheet
+        
+#     except Exception as e:
+#         print(f"❌ Error extracting data from main sheet: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         return [], None, None, None
 
 
-def fetch_from_drive(state=None, limit=50):
+# def fetch_from_drive(state=None, limit=50):
+#     """
+#     Fetch and process candidates from Google Drive with complete data extraction
+#     Added limit parameter to process only first N candidates
+#     UPDATED: Now includes duplicate prevention and tracking
+#     """
+#     def get_file_id(drive_url):
+#         if not drive_url or drive_url.strip() == '':
+#             return None
+#         if "id=" in drive_url:
+#             return drive_url.split("id=")[1]
+#         elif "/d/" in drive_url:
+#             return drive_url.split("/d/")[1].split("/")[0]
+#         return None
+
+#     try:
+#         print(f"🚀 Starting Google Drive processing (limit: {limit})...")
+        
+#         # Step 1: Extract candidate data from main sheet with limit and tracking
+#         candidate_data, gc, sheet_id, tracking_sheet = extract_candidate_data_from_main_sheet(limit=limit)
+        
+#         if not candidate_data:
+#             print("❌ No new candidate data found")
+#             return []
+        
+#         print(f"📊 Processing {len(candidate_data)} NEW candidates (limited to {limit})...")
+        
+#         # Step 2: Create or get analysis sheet for real-time updates
+#         try:
+#             sh = gc.open_by_key(sheet_id)
+#             try:
+#                 analysis_sheet = sh.worksheet("candidate analysis")
+#                 print("✅ Found existing candidate analysis sheet")
+#             except:
+#                 print("🆕 Creating new candidate analysis sheet...")
+#                 analysis_sheet = create_candidate_analysis_sheet(gc, sheet_id, candidate_data)
+#         except:
+#             analysis_sheet = None
+        
+#         if not analysis_sheet:
+#             print("❌ Failed to create/get analysis sheet")
+#             return candidate_data
+            
+#         CREDENTIALS_PATH = r"D:\hr_chatboat\credentials.json"
+        
+#         # Step 3: Set up Drive API for resume download
+#         SCOPES = [
+#             'https://www.googleapis.com/auth/spreadsheets',
+#             'https://www.googleapis.com/auth/drive'
+#         ]
+    
+#         creds = service_account.Credentials.from_service_account_file(
+#             CREDENTIALS_PATH, scopes=SCOPES
+#         )
+#         drive_service = build("drive", "v3", credentials=creds)
+#         os.makedirs("resumes/from_drive", exist_ok=True)
+        
+#         processed_candidates = []
+        
+#         # Step 4: Process each candidate
+#         for i, candidate in enumerate(candidate_data):
+#             row_number = candidate.get('original_row_number')
+#             print(f"\n🔄 Processing candidate {i+1}/{len(candidate_data)}: {candidate.get('name', 'Unknown')} (Row: {row_number})")
+#             print(f"📧 Email: {candidate.get('email', 'Not found')}")
+#             print(f"📱 Mobile: {candidate.get('mobile', 'Not found')}")
+#             print(f"💰 Stipend: {candidate.get('stipend', 'Not specified')}")
+#             print(f"📅 Experience: {candidate.get('experience', 'Not specified')}")
+            
+#             try:
+#                 resume_url = candidate.get('resume_url', '')
+#                 if not resume_url or resume_url.strip() == '' or resume_url == 'Not found':
+#                     print("⚠️ No resume URL found for this candidate")
+#                     candidate['final_score'] = 0
+#                     processed_candidates.append(candidate)
+                    
+#                     # ✅ NEW: Update tracking sheet
+#                     from datetime import datetime
+#                     tracking_row = [
+#                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
+#                         candidate.get('stipend', ''), candidate.get('experience', ''),
+#                         candidate.get('mobile', ''), 'COMPLETED', 
+#                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, ''
+#                     ]
+#                     tracking_sheet.append_row(tracking_row)
+                    
+#                     # ✅ NEW: Real-time update to analysis sheet
+#                     if analysis_sheet:
+#                         try:
+#                             candidate_row = [
+#                                 candidate.get('name', ''),
+#                                 candidate.get('email', ''),
+#                                 candidate.get('mobile', ''),
+#                                 candidate.get('address', ''),
+#                                 '',  # skills (empty for no resume)
+#                                 '',  # education (empty for no resume)
+#                                 candidate.get('stipend', ''),
+#                                 candidate.get('experience', ''),
+#                                 0,   # final_score
+#                                 0,   # similarity_score
+#                                 'N/A', # rank
+#                                 '',  # resume_url (empty)
+#                                 f"Row {row_number} - No Resume"
+#                             ]
+#                             analysis_sheet.append_row(candidate_row)
+#                             print(f"✅ Added to analysis sheet: {candidate.get('name')} - No Resume")
+#                         except Exception as sheet_error:
+#                             print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+#                     continue
+                
+#                 print(f"🔗 Resume URL: {resume_url}")
+                
+#                 # Download and process resume
+#                 file_id = get_file_id(resume_url)
+#                 if not file_id:
+#                     print(f"❌ Could not extract file_id from: {resume_url}")
+#                     candidate['final_score'] = 0
+#                     processed_candidates.append(candidate)
+                    
+#                     # ✅ NEW: Update tracking sheet
+#                     from datetime import datetime
+#                     tracking_row = [
+#                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
+#                         candidate.get('mobile', ''), 'ERROR', 
+#                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, resume_url
+#                     ]
+#                     tracking_sheet.append_row(tracking_row)
+                    
+#                     # ✅ NEW: Real-time update to analysis sheet
+#                     if analysis_sheet:
+#                         try:
+#                             candidate_row = [
+#                                 candidate.get('name', ''),
+#                                 candidate.get('email', ''),
+#                                 candidate.get('mobile', ''),
+#                                 candidate.get('address', ''),
+#                                 '',  # skills
+#                                 '',  # education
+#                                 candidate.get('stipend', ''),
+#                                 candidate.get('experience', ''),
+#                                 0,   # final_score
+#                                 0,   # similarity_score
+#                                 'N/A', # rank
+#                                 resume_url,
+#                                 f"Row {row_number} - Invalid URL"
+#                             ]
+#                             analysis_sheet.append_row(candidate_row)
+#                             print(f"✅ Added to analysis sheet: {candidate.get('name')} - ERROR")
+#                         except Exception as sheet_error:
+#                             print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+#                     continue
+                
+#                 try:
+#                     # Download the resume
+#                     print(f"⬇️ Downloading resume with file_id: {file_id}")
+#                     request = drive_service.files().get_media(fileId=file_id)
+#                     fh = io.BytesIO()
+#                     downloader = MediaIoBaseDownload(fh, request)
+#                     done = False
+#                     while not done:
+#                         status, done = downloader.next_chunk()
+                    
+#                     fh.seek(0)
+#                     file_path = Path("resumes/from_drive") / f"{file_id}.pdf"
+#                     with open(file_path, "wb") as f:
+#                         f.write(fh.read())
+                    
+#                     print(f"✅ Downloaded: {file_path}")
+                    
+#                     # Process the resume using LangGraph pipeline
+#                     temp_state = {
+#                         "resume": str(file_path),
+#                         "jd_text": state.get("jd_text", "") if state else ""
+#                     }
+                    
+#                     # Parse resume (extract basic info if missing from main sheet)
+#                     temp_state = parse_resume(temp_state)
+                    
+#                     # Update candidate info with extracted data ONLY if missing from main sheet
+#                     if candidate.get('name') == 'Not found' and temp_state.get('name'):
+#                         candidate['name'] = temp_state.get('name', 'Not found')
+#                     if candidate.get('mobile') == 'Not found' and temp_state.get('mobile'):
+#                         candidate['mobile'] = temp_state.get('mobile', 'Not found')
+#                     if candidate.get('email') == 'Not found' and temp_state.get('email'):
+#                         candidate['email'] = temp_state.get('email', 'Not found')
+                    
+#                     # LangGraph Analysis - extract skills, education, experience from resume
+#                     temp_state = analyze_skills_education_experience(temp_state)
+                    
+#                     # Update candidate with LangGraph results
+#                     candidate['skills'] = temp_state.get('analysis', {}).get('skills', [])
+#                     candidate['education'] = temp_state.get('analysis', {}).get('education', '')
+                    
+#                     # Note: Keep experience from main sheet, don't override with resume extraction
+#                     # candidate['experience'] stays as extracted from main sheet
+                    
+#                     # Compute similarity with job description if provided
+#                     if temp_state.get("jd_text"):
+#                         temp_state = compute_similarity(temp_state)
+#                         temp_state = score_resume(temp_state)
+                        
+#                         candidate['similarity_score'] = temp_state.get('similarity_score', 0)
+#                         candidate['final_score'] = temp_state.get('score', 0)
+#                     else:
+#                         print("⚠️ No job description provided, skipping similarity and scoring")
+#                         candidate['similarity_score'] = 0
+#                         candidate['final_score'] = 0
+                    
+#                     print(f"✅ Final score for {candidate.get('name', 'Unknown')}: {candidate['final_score']}")
+#                     print(f"🎯 Skills found: {len(candidate.get('skills', []))}")
+                    
+#                     # ✅ NEW: Update tracking sheet with successful processing
+#                     from datetime import datetime
+#                     tracking_row = [
+#                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
+#                         candidate.get('mobile', ''), 'COMPLETED', 
+#                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
+#                         candidate.get('final_score', 0), resume_url
+#                     ]
+#                     tracking_sheet.append_row(tracking_row)
+                    
+#                     # ✅ NEW: Real-time update to analysis sheet for each candidate
+#                     if analysis_sheet:
+#                         try:
+#                             candidate_row = [
+#                                 candidate.get('name', ''),
+#                                 candidate.get('email', ''),
+#                                 candidate.get('mobile', ''),
+#                                 candidate.get('address', ''),
+#                                 ', '.join(candidate.get('skills', [])),
+#                                 candidate.get('education', ''),
+#                                 candidate.get('stipend', ''),
+#                                 candidate.get('experience', ''),
+#                                 candidate.get('final_score', 0),
+#                                 candidate.get('similarity_score', 0),
+#                                 '', # rank will be updated later
+#                                 candidate.get('resume_url', ''),
+#                                 f"Row {row_number}"
+#                             ]
+#                             analysis_sheet.append_row(candidate_row)
+#                             print(f"✅ Added to analysis sheet: {candidate.get('name')} - Score: {candidate.get('final_score')}")
+#                         except Exception as sheet_error:
+#                             print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+                    
+                    
+#                 except Exception as download_error:
+#                     print(f"❌ Error downloading/processing resume: {download_error}")
+#                     candidate['final_score'] = 0
+#                     candidate['similarity_score'] = 0
+#                     candidate['skills'] = []
+#                     candidate['education'] = ''
+                    
+#                     # ✅ NEW: Update tracking sheet with error
+#                     from datetime import datetime
+#                     tracking_row = [
+#                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
+#                         candidate.get('mobile', ''), 'ERROR', 
+#                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, resume_url
+#                     ]
+#                     tracking_sheet.append_row(tracking_row)
+                    
+#                     # ✅ NEW: Real-time update to analysis sheet
+#                     if analysis_sheet:
+#                         try:
+#                             candidate_row = [
+#                                 candidate.get('name', ''),
+#                                 candidate.get('email', ''),
+#                                 candidate.get('mobile', ''),
+#                                 candidate.get('address', ''),
+#                                 '',  # skills
+#                                 '',  # education
+#                                 candidate.get('stipend', ''),
+#                                 candidate.get('experience', ''),
+#                                 0,   # final_score
+#                                 0,   # similarity_score
+#                                 'N/A', # rank
+#                                 resume_url,
+#                                 f"Row {row_number} - Download Error"
+#                             ]
+#                             analysis_sheet.append_row(candidate_row)
+#                             print(f"✅ Added to analysis sheet: {candidate.get('name')} - ERROR")
+#                         except Exception as sheet_error:
+#                             print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+                
+#             except Exception as e:
+#                 print(f"❌ Error processing candidate {candidate.get('name', 'Unknown')}: {e}")
+#                 candidate['final_score'] = 0
+#                 candidate['similarity_score'] = 0
+#                 candidate['skills'] = []
+#                 candidate['education'] = ''
+                
+#                 # ✅ NEW: Update tracking sheet with error
+#                 from datetime import datetime
+#                 tracking_row = [
+#                     row_number, candidate.get('name', ''), candidate.get('email', ''), 
+#                     candidate.get('mobile', ''), 'ERROR', 
+#                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, 
+#                     candidate.get('resume_url', '')
+#                 ]
+#                 tracking_sheet.append_row(tracking_row)
+                
+#                 # ✅ NEW: Real-time update to analysis sheet
+#                 if analysis_sheet:
+#                     try:
+#                         candidate_row = [
+#                             candidate.get('name', ''),
+#                             candidate.get('email', ''),
+#                             candidate.get('mobile', ''),
+#                             candidate.get('address', ''),
+#                             '',  # skills
+#                             '',  # education
+#                             candidate.get('stipend', ''),
+#                             candidate.get('experience', ''),
+#                             0,   # final_score
+#                             0,   # similarity_score
+#                             'N/A', # rank
+#                             candidate.get('resume_url', ''),
+#                             f"Row {row_number} - Processing Error"
+#                         ]
+#                         analysis_sheet.append_row(candidate_row)
+#                         print(f"✅ Added to analysis sheet: {candidate.get('name')} - ERROR")
+#                     except Exception as sheet_error:
+#                         print(f"⚠️ Error updating analysis sheet: {sheet_error}")
+            
+#             processed_candidates.append(candidate)
+        
+#         # Step 5: Rank candidates based on final score
+#         scored_candidates = [c for c in processed_candidates if c.get('final_score', 0) > 0]
+#         scored_candidates.sort(key=lambda x: x['final_score'], reverse=True)
+        
+#         # Assign ranks
+#         for i, candidate in enumerate(scored_candidates, 1):
+#             candidate['rank'] = i
+        
+#         # Candidates without scores get no rank
+#         unscored_candidates = [c for c in processed_candidates if c.get('final_score', 0) == 0]
+#         for candidate in unscored_candidates:
+#             candidate['rank'] = 'N/A'
+        
+#         # Step 6: Update rankings in analysis sheet (final step)
+#         if analysis_sheet and scored_candidates:
+#             print(f"\n🔄 Updating rankings in analysis sheet...")
+#             try:
+#                 # Get all data from analysis sheet to update ranks
+#                 analysis_data = analysis_sheet.get_all_records()
+                
+#                 # Update ranks for scored candidates
+#                 for candidate in scored_candidates:
+#                     candidate_name = candidate.get('name', '')
+#                     candidate_email = candidate.get('email', '')
+                    
+#                     # Find matching row in analysis sheet and update rank
+#                     for row_idx, row_data in enumerate(analysis_data, start=2):  # start=2 because row 1 is header
+#                         if (row_data.get('Name') == candidate_name and 
+#                             row_data.get('Email') == candidate_email):
+#                             analysis_sheet.update(f'K{row_idx}', candidate.get('rank', ''))  # Column K is rank
+#                             break
+                
+#                 print(f"✅ Updated rankings for {len(scored_candidates)} candidates")
+                
+#             except Exception as rank_error:
+#                 print(f"⚠️ Error updating rankings: {rank_error}")
+        
+#         # Remove the old batch update since we're doing real-time updates
+#         # update_success = update_candidate_analysis_sheet(analysis_sheet, processed_candidates)
+        
+#         update_success = True  # Since we're doing real-time updates
+        
+#         if update_success:
+#             print(f"\n🎉 Processing complete!")
+#             print(f"📊 {len(scored_candidates)} candidates scored and ranked (from {limit} processed)")
+#             print(f"📋 Results saved to 'candidate analysis' sheet")
+#             print(f"📝 Progress tracked in 'processing_tracker' sheet")
+            
+#             # Display top 5 candidates
+#             if scored_candidates:
+#                 print("\n🏆 TOP 5 CANDIDATES:")
+#                 print("-" * 130)
+#                 print(f"{'Rank':<4} {'Name':<25} {'Score':<8} {'Stipend':<15} {'Experience':<12} {'Row':<5} {'Email':<30}")
+#                 print("-" * 130)
+#                 for candidate in scored_candidates[:5]:
+#                     print(f"{candidate.get('rank', 'N/A'):<4} "
+#                           f"{candidate.get('name', 'Unknown')[:24]:<25} "
+#                           f"{candidate.get('final_score', 0):<8.2f} "
+#                           f"{str(candidate.get('stipend', 'Not specified'))[:14]:<15} "
+#                           f"{str(candidate.get('experience', 'Not specified'))[:11]:<12} "
+#                           f"{candidate.get('original_row_number', 'N/A'):<5} "
+#                           f"{candidate.get('email', 'Not found')[:29]:<30}")
+        
+#         return processed_candidates
+
+#     except Exception as e:
+#         print("❌ Error in fetch_from_drive:", e)
+#         import traceback
+#         traceback.print_exc()
+#         return []
+def fetch_from_drive(state=None, limit=500):
     """
     Fetch and process candidates from Google Drive with complete data extraction
     Added limit parameter to process only first N candidates
@@ -815,11 +1457,12 @@ def fetch_from_drive(state=None, limit=50):
                     candidate['final_score'] = 0
                     processed_candidates.append(candidate)
                     
-                    # ✅ NEW: Update tracking sheet
+                    # ✅ FIXED: Update tracking sheet with correct field order
                     from datetime import datetime
                     tracking_row = [
                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
-                        candidate.get('mobile', ''), 'COMPLETED', 
+                        candidate.get('mobile', ''), 'COMPLETED',
+                        candidate.get('address', ''), candidate.get('stipend', ''), candidate.get('experience', ''),
                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, ''
                     ]
                     tracking_sheet.append_row(tracking_row)
@@ -857,11 +1500,12 @@ def fetch_from_drive(state=None, limit=50):
                     candidate['final_score'] = 0
                     processed_candidates.append(candidate)
                     
-                    # ✅ NEW: Update tracking sheet
+                    # ✅ FIXED: Update tracking sheet with correct field order
                     from datetime import datetime
                     tracking_row = [
                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
-                        candidate.get('mobile', ''), 'ERROR', 
+                        candidate.get('mobile', ''), 'ERROR',
+                        candidate.get('address', ''), candidate.get('stipend', ''), candidate.get('experience', ''),
                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, resume_url
                     ]
                     tracking_sheet.append_row(tracking_row)
@@ -949,11 +1593,12 @@ def fetch_from_drive(state=None, limit=50):
                     print(f"✅ Final score for {candidate.get('name', 'Unknown')}: {candidate['final_score']}")
                     print(f"🎯 Skills found: {len(candidate.get('skills', []))}")
                     
-                    # ✅ NEW: Update tracking sheet with successful processing
+                    # ✅ FIXED: Update tracking sheet with correct field order including address, stipend, experience
                     from datetime import datetime
                     tracking_row = [
                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
-                        candidate.get('mobile', ''), 'COMPLETED', 
+                        candidate.get('mobile', ''), 'COMPLETED',
+                        candidate.get('address', ''), candidate.get('stipend', ''), candidate.get('experience', ''),
                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
                         candidate.get('final_score', 0), resume_url
                     ]
@@ -990,11 +1635,12 @@ def fetch_from_drive(state=None, limit=50):
                     candidate['skills'] = []
                     candidate['education'] = ''
                     
-                    # ✅ NEW: Update tracking sheet with error
+                    # ✅ FIXED: Update tracking sheet with correct field order
                     from datetime import datetime
                     tracking_row = [
                         row_number, candidate.get('name', ''), candidate.get('email', ''), 
-                        candidate.get('mobile', ''), 'ERROR', 
+                        candidate.get('mobile', ''), 'ERROR',
+                        candidate.get('address', ''), candidate.get('stipend', ''), candidate.get('experience', ''),
                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, resume_url
                     ]
                     tracking_sheet.append_row(tracking_row)
@@ -1029,11 +1675,12 @@ def fetch_from_drive(state=None, limit=50):
                 candidate['skills'] = []
                 candidate['education'] = ''
                 
-                # ✅ NEW: Update tracking sheet with error
+                # ✅ FIXED: Update tracking sheet with correct field order
                 from datetime import datetime
                 tracking_row = [
                     row_number, candidate.get('name', ''), candidate.get('email', ''), 
-                    candidate.get('mobile', ''), 'ERROR', 
+                    candidate.get('mobile', ''), 'ERROR',
+                    candidate.get('address', ''), candidate.get('stipend', ''), candidate.get('experience', ''),
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 0, 
                     candidate.get('resume_url', '')
                 ]
@@ -1134,7 +1781,6 @@ def fetch_from_drive(state=None, limit=50):
         import traceback
         traceback.print_exc()
         return []
-
 
 def run_complete_resume_analysis(jd_text="", source_type="drive", limit=5):
     """
