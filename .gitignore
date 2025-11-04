@@ -5,3 +5,10 @@ __pycache__/
 .env.*
 *.log
 .DS_Store
+credentials.json
+streamlit_projects\test.ipynb
+streamlit_projects\test.py
+temp.py
+C:\Users\SHREE\Pyrack\suvarna\hr_chatboat\test2.py
+temp.json
+streamlit_projects\app\raw.txt
