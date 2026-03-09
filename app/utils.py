@@ -122,12 +122,40 @@ def extract_candidate_data_from_main_sheet(main_sheet_id=None, limit=2):
             print(f"📊 Error reading tracking data: {tracking_error}")
             print("📊 No previous processing data found")
         
-        # Get all data from main sheet
-        all_data = ws.get_all_records()
+        # Get all data from main sheet — use get_all_values() to avoid
+        # gspread.exceptions.GSpreadException on duplicate/empty column headers
+        try:
+            all_values = ws.get_all_values()
+        except Exception as sheet_read_err:
+            print(f"❌ Error reading main sheet: {sheet_read_err}")
+            return [], gc, main_sheet_id, tracking_sheet
+
+        if not all_values or len(all_values) < 2:
+            print("❌ Main sheet is empty or has only a header row")
+            return [], gc, main_sheet_id, tracking_sheet
+
+        headers = all_values[0]
+        rows = all_values[1:]
+
+        # Deduplicate column headers (append _2, _3 etc to duplicates)
+        seen_headers = {}
+        clean_headers = []
+        for h in headers:
+            h = h.strip()
+            if h == "":
+                h = f"_empty_{len(clean_headers)}"
+            if h in seen_headers:
+                seen_headers[h] += 1
+                h = f"{h}_{seen_headers[h]}"
+            else:
+                seen_headers[h] = 1
+            clean_headers.append(h)
+
+        all_data = [dict(zip(clean_headers, row)) for row in rows]
         df = pd.DataFrame(all_data)
-        
+
         # Remove completely empty rows
-        df = df.dropna(how='all')
+        df = df.replace('', pd.NA).dropna(how='all').replace(pd.NA, '')
 
         # ✅ NEW: Add row numbers for tracking and filter from last processed + 1
         df = df.reset_index(drop=True)
@@ -454,6 +482,10 @@ def fetch_from_drive(state=None, limit=5):
                     file_path = Path("resumes/from_drive") / f"{file_id}.pdf"
                     with open(file_path, "wb") as f:
                         f.write(fh.read())
+                    
+                    # Add filepath and filename so process_resumes can find the file
+                    candidate['filepath'] = str(file_path)
+                    candidate['filename'] = f"{candidate.get('name', file_id)}.pdf"
                     
                     print(f"✅ Downloaded: {file_path}")
                     
@@ -1623,8 +1655,12 @@ def classify_resume(state: ResumeState) -> ResumeState:
     """
     try:
         prompt = PromptTemplate.from_template("""
-        Classify the resume below into **only one** job category from this list:
+        You are an expert HR recruiter classifying resumes based on job descriptions.
+        
+        Task: Classify the candidate's Resume into one of the exact Job Categories listed below based on their skills and experience.
+        If the Resume does NOT match the Job Description or does not fit any of the listed categories well, you MUST output "N/A".
 
+        Job Categories List:
         - AI Engineer
         - Data Analyst
         - Machine Learning Engineer
@@ -1646,7 +1682,10 @@ def classify_resume(state: ResumeState) -> ResumeState:
         Resume:
         {resume}
 
-        Only return one of the above job categories exactly as-is. No explanation.
+        Instructions:
+        1. Only return the exact name of the job category from the list above.
+        2. Do not include any explanations, punctuation, or other text.
+        3. If the resume is completely unrelated to the job description, return "N/A".
         """)
         chain = prompt | llm
         response = chain.invoke({

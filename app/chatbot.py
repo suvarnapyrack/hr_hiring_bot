@@ -47,6 +47,7 @@ def _get_candidate_documents(db: Session) -> tuple[List[str], List[dict], List[s
             f"Skills: {c.skills or 'Not listed'}\n"
             f"Education: {c.education or 'Unknown'}\n"
             f"Experience: {c.experience or 'Unknown'} years\n"
+            f"Address: {c.address or 'N/A'}\n"
             f"Final Score: {score:.2f}/10\n"
             f"Hiring Status: {status}\n"
             f"Resume Source: {r.source or 'N/A'}\n"
@@ -60,6 +61,7 @@ def _get_candidate_documents(db: Session) -> tuple[List[str], List[dict], List[s
             "status": status,
             "skills": c.skills or "",
             "experience": c.experience or "",
+            "address": c.address or "",
         })
         ids.append(f"candidate_{cand_id}")
 
