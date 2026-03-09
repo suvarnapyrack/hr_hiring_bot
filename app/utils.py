@@ -1,3 +1,7 @@
+import functools
+import builtins
+builtins.print = functools.partial(print, flush=True)
+
 import os
 import re
 import io   
@@ -27,11 +31,14 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
-from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 
-# Initialize LLM
-llm = ChatOllama(model="gpt-oss:20b")
+# Initialize LLM — using Groq cloud API
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0
+)
 
 
 
@@ -788,7 +795,7 @@ def choose_source(state: ResumeState) -> ResumeState:
     print(f"✅ Chosen source: {source_type}")
     return {**state, "source_type": source_type}
 
-def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: str = "resumes/gmail") -> list[dict]:
+def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: str = "resumes/gmail", days_limit: int = 2) -> list[dict]:
     os.makedirs(download_dir, exist_ok=True)
     allowed_ext = (".pdf", ".doc", ".docx")
     downloaded = []
@@ -798,7 +805,7 @@ def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: s
         mail.login(user_email, app_password)
         mail.select("inbox")
 
-        date_since = (datetime.now() - timedelta(days=2)).strftime("%d-%b-%Y")
+        date_since = (datetime.now() - timedelta(days=days_limit)).strftime("%d-%b-%Y")
         result, data = mail.search(None, f'(SINCE {date_since})')
 
         if result != "OK":
@@ -836,7 +843,7 @@ def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: s
         print(f"❌ Error fetching resumes from Gmail: {e}")
         return []
 
-def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail") -> dict:
+def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail", limit: int = 10, days_limit: int = 2) -> dict:
     user_email = os.getenv("GMAIL_USER")
     app_password = os.getenv("GMAIL_PASS")
 
@@ -844,13 +851,17 @@ def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail") -> dict:
         print("❌ Gmail credentials not found in environment variables.")
         return {**state, "resumes": []}
 
-    downloaded = fetch_resumes_from_gmail(user_email, app_password, download_dir)
+    downloaded = fetch_resumes_from_gmail(user_email, app_password, download_dir, days_limit)
+
+    # Optional: limit the total number returned based on the 'limit' parameter
+    if limit and len(downloaded) > limit:
+        downloaded = downloaded[:limit]
 
     if downloaded:
         print(f"✅ Successfully fetched {len(downloaded)} resumes from Gmail.")
         return {**state, "resumes": downloaded}
     else:
-        print("❌ No resumes found in Gmail in the last 2 days.")
+        print(f"❌ No resumes found in Gmail in the last {days_limit} days.")
         return {**state, "resumes": []}
 
 def create_candidate_analysis_sheet(gc, sheet_id, candidate_data):
@@ -985,18 +996,85 @@ def manual_upload(state: ResumeState) -> ResumeState:
     print("✅ Manual upload selected")
     return state
 
-def extract_text_from_pdf(filepath: str) -> str:
+def extract_text_with_ocr(filepath: str) -> str:
+    """
+    Fallback method to extract text from a PDF file using OCR (Optical Character Recognition).
+    Used when standard text extraction fails (e.g., image-based PDFs).
+    Requires 'pdf2image' and 'pytesseract' libraries, and poppler/tesseract installed on the system.
+    """
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+        
+        print(f"🔍 Attempting OCR extraction on: {os.path.basename(filepath)}")
+        # Convert PDF pages to images
+        images = convert_from_path(filepath)
+        text_content = []
+        
+        # Run OCR on each image
+        for i, image in enumerate(images):
+            print(f"   Processing page {i+1}/{len(images)}...")
+            page_text = pytesseract.image_to_string(image)
+            text_content.append(page_text)
+            
+        full_text = "\n".join(text_content)
+        
+        if len(full_text.strip()) > 50:
+            print(f"✅ OCR extraction successful ({len(full_text)} characters)")
+            return full_text
+        else:
+            print("⚠️ OCR extraction yielded little to no text.")
+            return ""
+            
+    except ImportError:
+        print("❌ OCR libraries missing. Please install 'pdf2image' and 'pytesseract'.")
+        return ""
+    except Exception as e:
+        print(f"❌ Error during OCR extraction: {e}")
+        return ""
+
+def extract_text_from_pdf(filepath: str) -> tuple[str, bool]:
     """
     Extracts text from a PDF file using pdfplumber.
+    Returns a tuple: (extracted_text, requires_ocr_flag)
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
 
-    with pdfplumber.open(filepath) as pdf:
-        text = "\n".join(
-            [page.extract_text() for page in pdf.pages if page.extract_text()]
-        )
-    return text
+    text = ""
+    requires_ocr = False
+    
+    try:
+        with pdfplumber.open(filepath) as pdf:
+            text = "\n".join(
+                [page.extract_text() or "" for page in pdf.pages]
+            )
+            
+        # If extraction is very short, it might be an image-based PDF
+        if len(text.strip()) < 50:
+            print(f"⚠️ Standard extraction yielded only {len(text.strip())} chars. Flagging for OCR.")
+            requires_ocr = True
+            
+    except Exception as e:
+        print(f"⚠️ Error during standard extraction: {e}. Flagging for OCR.")
+        requires_ocr = True
+
+    return text, requires_ocr
+
+def clean_text(text: str) -> str:
+    # Clean each line separately to preserve line structure
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        # Remove extra whitespaces within each line but preserve line breaks
+        line = re.sub(r"[ \t]+", " ", line)  # Only collapse spaces and tabs, not newlines
+        line = re.sub(r"[^\x00-\x7F]+", " ", line)  # Remove non-ASCII characters
+        line = line.strip()  # Remove leading/trailing whitespace from each line
+        if line:  # Only add non-empty lines
+            cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines)
 
 def parse_resume(state: Dict) -> Dict:
     """
@@ -1007,22 +1085,7 @@ def parse_resume(state: Dict) -> Dict:
 
     if not resume_path or not os.path.exists(resume_path):
         print("❌ Resume file not found")
-        return {**state, "resume_text": "", "mobile": "Not found", "email": "Not found", "name": "Not found", "address": "Not found"}
-
-    def clean_text(text: str) -> str:
-        # Clean each line separately to preserve line structure
-        lines = text.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            # Remove extra whitespaces within each line but preserve line breaks
-            line = re.sub(r"[ \t]+", " ", line)  # Only collapse spaces and tabs, not newlines
-            line = re.sub(r"[^\x00-\x7F]+", " ", line)  # Remove non-ASCII characters
-            line = line.strip()  # Remove leading/trailing whitespace from each line
-            if line:  # Only add non-empty lines
-                cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines)
+        return {**state, "resume_text": "", "mobile": "Not found", "email": "Not found", "name": "Not found", "address": "Not found", "requires_ocr": False}
 
     def extract_info_with_groq_llm(text: str) -> Dict[str, str]:
         """
@@ -1057,13 +1120,12 @@ Rules:
         try:
             print("🤖 Using Groq Llama3 to extract candidate information...")
             
-            # Initialize Groq LLM (using your existing setup)
-            # llm = ChatGroq(
-            #     model="llama3-8b-8192", 
-            #     api_key=os.getenv("GROQ_API_KEY"),
-            #     temperature=0  # For consistent extraction
-            # )
-            llm = ChatOllama(model="gpt-oss:20b") 
+            # Initialize Groq LLM
+            llm = ChatGroq(
+                model="llama-3.3-70b-versatile", 
+                api_key=os.getenv("GROQ_API_KEY"),
+                temperature=0  # For consistent extraction
+            )
             
             # Call the LLM
             response = llm.invoke(extraction_prompt)
@@ -1266,7 +1328,24 @@ Rules:
 
     try:
         # Extract text from PDF
-        raw_text = extract_text_from_pdf(resume_path)
+        if resume_path.lower().endswith('.pdf'):
+            raw_text, requires_ocr = extract_text_from_pdf(resume_path)
+            
+            # If standard extraction flagged OCR, attempt it here
+            if requires_ocr:
+                print(f"🔄 Standard extraction yielded little text. Attempting OCR on {resume_path}...")
+                ocr_text = extract_text_with_ocr(resume_path)
+                if ocr_text:
+                    raw_text = ocr_text
+                    
+        elif resume_path.lower().endswith(('.docx', '.doc')):
+            with open(resume_path, 'r', encoding='utf-8') as f:
+                 raw_text = f.read()
+            requires_ocr = False
+        else:
+            raw_text = ""
+            requires_ocr = False
+            
         cleaned_text = clean_text(raw_text)
 
         print(f"✅ Parsed resume text (first 300 chars):\n{cleaned_text[:300]}")
@@ -1603,6 +1682,72 @@ def score_resume(state: ResumeState) -> ResumeState:
         return {**state, "score": 0, "experience_filtered": False}
     
     print(f"✅ Similarity score: {similarity}")
+
+    req_exp = extract_required_experience(state.get("jd_text", ""))
+    candidate_exp = float(analysis.get("experience", 0))
+
+    if req_exp is not None and candidate_exp < req_exp:
+        print(f"❌ Rejected: Needs {req_exp}+ years, has {candidate_exp} years")
+        return {**state, "score": 0, "experience_filtered": True}
+
+    score = similarity
+    print(f"✅ Final adjusted score: {score}")
+
+    return {**state, "score": score, "experience_filtered": False}
+
+
+def save_to_db_node(state: ResumeState) -> ResumeState:
+    """
+    LangGraph node to save the final processed state into PostgreSQL.
+    """
+    from app.database import get_db
+    from app.crud import create_or_update_candidate, save_resume_analysis, create_job_description
+    
+    # Needs to run within a DB session
+    db_gen = get_db()
+    db = next(db_gen)
+    
+    print("💾 [DB Node] Saving candidate and resume to PostgreSQL...")
+    try:
+        # 1. Save Candidate
+        candidate_data = {
+            "name": state.get("name", "Unknown"),
+            "email": state.get("email", "Unknown"),
+            "mobile": state.get("mobile", "Unknown"),
+            "address": state.get("address", "Unknown"),
+            "skills": state.get("analysis", {}).get("skills", []),
+            "education": state.get("analysis", {}).get("education", "Unknown"),
+            "experience": state.get("analysis", {}).get("experience", "0")
+        }
+        candidate = create_or_update_candidate(db, candidate_data)
+        
+        # 2. Save Job Description (Optional, but good for linking)
+        # We assume jd_text is the same. Job Type comes from classification or defaults.
+        job_type = state.get("job_type", "General")
+        job = create_job_description(db, job_type, state.get("jd_text", ""))
+        
+        # 3. Save Resume Analysis Link
+        resume_record = save_resume_analysis(
+            db=db,
+            candidate_id=candidate.id,
+            file_path=state.get("resume", "Unknown_Path"),
+            source=state.get("source_type", "unknown"),
+            result_state=state,
+            job_id=job.id
+        )
+        
+        print(f"✅ [DB Node] Saved candidate {candidate.name} (ID: {candidate.id}) and resume (ID: {resume_record.id})")
+        # Store DB ID in state for potential later use
+        state["db_id"] = resume_record.id
+        
+    except Exception as e:
+        print(f"❌ [DB Node] Error saving to DB: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+        
+    return state
 
     exp_str = analysis.get("experience", "0")
     match = re.search(r"[\d.]+", exp_str)

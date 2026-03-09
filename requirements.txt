@@ -1,14 +1,3 @@
-# streamlit 
-# langchain 
-# langgraph 
-# groq
-# pdfplumber
-# pandas 
-# sentence-transformers 
-# python-dotenv
-# langchain_groq
-
-
 streamlit
 langchain
 langgraph
@@ -24,22 +13,21 @@ beautifulsoup4
 tqdm
 pydantic
 scikit-learn
-PyMuPDF
 openpyxl
 langchain-community
 langchain-openai
-chromadb
-pymupdf
-spacy
-sentence-transformers 
- 
-scikit-learn
-
-gdown 
-python-docx 
+gdown
+python-docx
 docx2txt
 google-api-python-client
 google-auth-httplib2
-google-auth-oauthlib 
-google-auth 
+google-auth-oauthlib
+google-auth
 gspread
+psycopg2-binary
+sqlalchemy>=2.0,<3.0
+pdf2image
+pytesseract
+plotly
+fpdf2
+chromadb

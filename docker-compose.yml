@@ -1,5 +1,24 @@
-# version: '3.8'
+version: '3.8'
+
 services:
+  db:
+    image: postgres:15
+    container_name: hr_bot_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: hr_bot_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hr_bot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   hr_hiring_bot:
     build: .
     container_name: hr_hiring_bot_container
@@ -7,6 +26,19 @@ services:
       - "8501:8501"
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/hr_bot_db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     volumes:
       - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
     restart: always
+
+volumes:
+  postgres_data:

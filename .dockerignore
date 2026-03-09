@@ -1,4 +1,12 @@
 __pycache__/
 *.pyc
 env/
+venv/
+.venv/
+.env
+.git/
 .gitignore
+*.sqlite3
+resumes/
+temp_jd/
+temp_manual/

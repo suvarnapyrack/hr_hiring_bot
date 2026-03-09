@@ -940,6 +940,10 @@
 
 
 
+import functools
+import builtins
+builtins.print = functools.partial(print, flush=True)
+
 import os
 import re
 import streamlit as st
@@ -952,7 +956,25 @@ import pandas as pd
 from app.utils import rank_top_candidates, fetch_from_gmail, fetch_from_drive 
 from app.utils import extract_text_from_pdf, parse_resume
 from app.langgraph_flow import graph
+from app.database import get_db
+from app.models import Candidate, JobDescription, Resume
+from sqlalchemy import func
 from typing import Dict
+
+# New feature imports
+from app.analytics import show_analytics_page
+from app.report_generator import export_to_excel, export_to_pdf
+from app.chatbot import get_chatbot_response
+from app.crud import (
+    search_candidates,
+    create_jd_template,
+    get_all_jd_templates,
+    delete_jd_template,
+    get_top_candidates,
+    save_chat_message,
+    get_chat_history,
+    clear_chat_history,
+)
 
 load_dotenv()
 
@@ -977,7 +999,8 @@ def process_resumes(resume_items, jd_text, source_type="manual"):
         try:
             resume_text = ""
             if path.lower().endswith('.pdf'):
-                resume_text = extract_text_from_pdf(path)
+                # extract_text_from_pdf returns (text, requires_ocr) tuple
+                resume_text, _ = extract_text_from_pdf(path)
             elif path.lower().endswith(('.docx', '.doc')):
                 with open(path, 'r', encoding='utf-8') as f:
                     resume_text = f.read()
@@ -1506,7 +1529,7 @@ def display_results_table(processed_resumes):
         # Display table with custom styling
         st.dataframe(
             df,
-            use_container_width=True,
+            width="stretch",
             height=600,
             hide_index=True,
             column_config={
@@ -1529,7 +1552,7 @@ def display_results_table(processed_resumes):
             data=csv,
             file_name=f"candidate_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
-            use_container_width=True
+            width="stretch"
         )
         
     else:
@@ -1579,7 +1602,15 @@ def display_results_table(processed_resumes):
                 # Resume file info
                 resume_path = res.get("resume_path") or res.get("filepath")
                 if resume_path and os.path.exists(resume_path):
-                    st.markdown(f"<br>📄 **Resume:** `{os.path.basename(resume_path)}`", unsafe_allow_html=True)
+                    st.markdown(f"<br>📄 **Resume File Details:** `{os.path.basename(resume_path)}`", unsafe_allow_html=True)
+                    if st.button("👁️ View PDF", key=f"view_btn_{i}_{resume_path}"):
+                        try:
+                            with open(resume_path, "rb") as f:
+                                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+                            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+                            st.markdown(pdf_display, unsafe_allow_html=True)
+                        except Exception as e:
+                            st.error(f"Could not load PDF: {e}")
 
 def run_streamlit():
     st.set_page_config(
@@ -1609,15 +1640,56 @@ def run_streamlit():
         st.markdown("<h1>🤖 HR Hiring Bot</h1>", unsafe_allow_html=True)
         st.markdown("**AI-Powered Resume Screening with LangGraph Intelligence**")
 
+    # Metrics Dashboard
+    try:
+        db_gen = get_db()
+        db = next(db_gen)
+        
+        total_candidates = db.query(Candidate).count()
+        total_jobs = db.query(JobDescription).count()
+        avg_score = db.query(func.avg(Resume.final_score)).scalar() or 0.0
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Candidates Processed", total_candidates)
+        m2.metric("Total Job Descriptions", total_jobs)
+        m3.metric("Average Candidate Score", f"{avg_score:.2f}/10")
+        
+        db.close()
+    except Exception as e:
+        st.warning(f"Database metrics unavailable: {e}")
+
     # Sidebar navigation
     with st.sidebar:
         st.markdown("### 🎯 Navigation")
         source = st.radio(
-            "",
-            ["📩 Gmail", "📁 Upload Folder", "📤 Manual Upload", "☁️ Google Drive", "📊 View Results"],
+            "Navigation Menu",
+            [
+                "📩 Gmail",
+                "📁 Upload Folder",
+                "📤 Manual Upload",
+                "☁️ Google Drive",
+                "📊 View Results",
+                "📈 Analytics",
+                "🔍 Search Candidates",
+                "📋 JD Templates",
+                "💬 AI Chat",
+            ],
             label_visibility="collapsed"
         )
         
+        st.markdown("---")
+        st.markdown("### ⚙️ Fetch Settings")
+        st.session_state["days_limit"] = st.number_input(
+            "Fetch Resumes from last X days", 
+            min_value=1, max_value=30, value=2, step=1,
+            help="Limit fetching to emails received in this timeframe."
+        )
+        st.session_state["max_resumes"] = st.number_input(
+            "Max Resumes to Process", 
+            min_value=1, max_value=100, value=10, step=1,
+            help="Maximum number of resumes to download and process."
+        )
+
         st.markdown("---")
         st.markdown("### 📈 Quick Stats")
         if st.session_state.get("resume_items"):
@@ -1642,7 +1714,7 @@ def run_streamlit():
     
     with jd_col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("✅ Submit JD", use_container_width=True):
+        if st.button("✅ Submit JD", width="stretch"):
             final_jd_text = ""
             
             if jd_file is not None:
@@ -1685,7 +1757,7 @@ def run_streamlit():
         
         with st.form("gmail_form"):
             st.info("📬 Connect to your Gmail account to fetch resumes automatically")
-            submitted = st.form_submit_button("📥 Fetch Resumes from Gmail", use_container_width=True)
+            submitted = st.form_submit_button("📥 Fetch Resumes from Gmail", width="stretch")
             
             if submitted:
                 user = os.getenv("GMAIL_USER")
@@ -1697,7 +1769,12 @@ def run_streamlit():
                     with st.spinner("📡 Connecting to Gmail..."):
                         try:
                             state = {}
-                            items_state = fetch_from_gmail(state, download_dir="resumes/gmail")
+                            items_state = fetch_from_gmail(
+                                state, 
+                                download_dir="resumes/gmail", 
+                                limit=st.session_state["max_resumes"],
+                                days_limit=st.session_state["days_limit"]
+                            )
                             items = items_state.get("resumes", [])
 
                             st.session_state["resume_items"] = items or []
@@ -1716,7 +1793,7 @@ def run_streamlit():
             help="Upload multiple resume files at once for batch processing"
         )
         
-        if st.button("📂 Process Uploaded Files", use_container_width=True):
+        if st.button("📂 Process Uploaded Files", width="stretch"):
             if not uploaded_files:
                 st.warning("Please upload resume files first")
             else:
@@ -1749,7 +1826,7 @@ def run_streamlit():
             help="Manually select and upload individual resume files"
         )
         
-        if st.button("📥 Add to Workspace", use_container_width=True):
+        if st.button("📥 Add to Workspace", width="stretch"):
             if uploaded_files:
                 os.makedirs("temp_manual", exist_ok=True)
                 current_items = st.session_state.get("resume_items", [])
@@ -1772,7 +1849,7 @@ def run_streamlit():
         st.markdown("## ☁️ Fetch from Google Drive")
         st.info("📁 Connect to Google Drive using your credentials.json file")
         
-        if st.button("📥 Fetch from Drive", use_container_width=True):
+        if st.button("📥 Fetch from Drive", width="stretch"):
             with st.spinner("📡 Connecting to Google Drive..."):
                 try:
                     initial_state = {
@@ -1782,7 +1859,7 @@ def run_streamlit():
                     }
                     
                     state = {} 
-                    items = fetch_from_drive(initial_state)
+                    items = fetch_from_drive(initial_state, limit=st.session_state["max_resumes"])
                     st.session_state["resume_items"] = items
                     st.session_state["source_type"] = "drive"
                     st.success("✅ Successfully fetched resumes from Drive!")
@@ -1821,7 +1898,7 @@ def run_streamlit():
             if st.button(
                 "⚙️ Start Processing", 
                 disabled=not (st.session_state["resume_items"] and st.session_state["jd_submitted"]),
-                use_container_width=True
+                width="stretch"
             ):
                 if not st.session_state["resume_items"]:
                     st.error("Please load resumes first")
@@ -1849,14 +1926,14 @@ def run_streamlit():
                             st.error(f"❌ Processing error: {e}")
         
         with col2:
-            if st.button("🔄 Clear Results", use_container_width=True):
+            if st.button("🔄 Clear Results", width="stretch"):
                 st.session_state["results"] = []
                 st.session_state["processing_complete"] = False
                 st.success("✅ Results cleared!")
                 st.rerun()
         
         with col3:
-            if st.button("🗑️ Clear All", use_container_width=True):
+            if st.button("🗑️ Clear All", width="stretch"):
                 st.session_state["resume_items"] = []
                 st.session_state["results"] = []
                 st.session_state["jd_text"] = ""
@@ -1867,9 +1944,256 @@ def run_streamlit():
         
         st.markdown("---")
         
-        # Display results if available
+        # Display results from current session if available
         if st.session_state.get("processing_complete") and st.session_state.get("results"):
+            st.markdown("### 🎯 Current Session Results")
             display_results_table(st.session_state["results"])
+
+        st.markdown("---")
+        
+        # Display All-Time Top Candidates from DB
+        st.markdown("### 🏆 Top Candidates Database")
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            
+            top_scholars = get_top_candidates(db, limit=st.session_state.get("max_resumes", 50))
+            
+            if top_scholars:
+                st.dataframe(
+                    top_scholars,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # ── Export buttons ────────────────────────────────────────────
+                st.markdown("#### 📤 Export Results")
+                export_col1, export_col2 = st.columns(2)
+                with export_col1:
+                    try:
+                        excel_bytes = export_to_excel(top_scholars)
+                        st.download_button(
+                            label="📥 Download Excel",
+                            data=excel_bytes,
+                            file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                        )
+                    except Exception as ex:
+                        st.error(f"Excel export error: {ex}")
+                with export_col2:
+                    try:
+                        pdf_bytes = export_to_pdf(top_scholars)
+                        st.download_button(
+                            label="📄 Download PDF",
+                            data=pdf_bytes,
+                            file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+                    except Exception as ex:
+                        st.error(f"PDF export error: {ex}")
+            else:
+                st.info("No candidates processed yet in the database.")
+                
+            db.close()
+        except Exception as e:
+            st.warning(f"Could not load database results: {e}")
+
+    # ── Analytics Page ───────────────────────────────────────────────────────
+    elif "Analytics" in source:
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            show_analytics_page(db)
+            db.close()
+        except Exception as e:
+            st.error(f"Analytics error: {e}")
+
+    # ── Search & Filter Page ─────────────────────────────────────────────────
+    elif "Search Candidates" in source:
+        st.markdown("## 🔍 Search & Filter Candidates")
+        st.markdown("Search the candidate database with advanced filters.")
+        st.markdown("---")
+
+        with st.form("search_form"):
+            sf_col1, sf_col2, sf_col3 = st.columns(3)
+            with sf_col1:
+                search_name = st.text_input("👤 Name contains", placeholder="e.g. Suvarna")
+                search_email = st.text_input("📧 Email contains", placeholder="e.g. gmail.com")
+            with sf_col2:
+                score_range = st.slider("⭐ Score Range", 0.0, 10.0, (0.0, 10.0), step=0.5)
+                search_status = st.selectbox("✅ Status", ["All", "Accepted", "Rejected"])
+            with sf_col3:
+                search_skills = st.text_input("🔧 Skills contain", placeholder="e.g. Python, React")
+                st.markdown("<br>", unsafe_allow_html=True)
+            
+            search_submitted = st.form_submit_button("🔍 Search", use_container_width=True)
+
+        if search_submitted:
+            try:
+                db_gen = get_db()
+                db = next(db_gen)
+                search_results = search_candidates(
+                    db,
+                    name=search_name,
+                    email=search_email,
+                    score_min=score_range[0],
+                    score_max=score_range[1],
+                    status=search_status,
+                    skills_keyword=search_skills,
+                )
+                db.close()
+
+                st.markdown(f"### Found **{len(search_results)}** candidate(s)")
+                if search_results:
+                    st.dataframe(search_results, use_container_width=True, hide_index=True)
+                    # Export filtered results
+                    exp_c1, exp_c2 = st.columns(2)
+                    with exp_c1:
+                        try:
+                            excel_bytes = export_to_excel(search_results)
+                            st.download_button(
+                                "📥 Export Excel", excel_bytes,
+                                file_name="search_results.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                            )
+                        except Exception as ex:
+                            st.error(f"Export error: {ex}")
+                    with exp_c2:
+                        try:
+                            pdf_bytes = export_to_pdf(search_results)
+                            st.download_button(
+                                "📄 Export PDF", pdf_bytes,
+                                file_name="search_results.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                            )
+                        except Exception as ex:
+                            st.error(f"Export error: {ex}")
+                else:
+                    st.info("No candidates matched your filters.")
+            except Exception as e:
+                st.error(f"Search error: {e}")
+
+    # ── JD Templates Page ────────────────────────────────────────────────────
+    elif "JD Templates" in source:
+        st.markdown("## 📋 Job Description Templates")
+        st.markdown("Save and reuse Job Descriptions for different roles.")
+        st.markdown("---")
+
+        # Save current JD as template
+        st.markdown("### 💾 Save Current JD as Template")
+        with st.form("save_template_form"):
+            tmpl_name = st.text_input("Template Name *", placeholder="e.g. Senior Python Developer")
+            tmpl_title = st.text_input("Job Title (optional)", placeholder="e.g. Senior Backend Engineer")
+            tmpl_jd_text = st.text_area(
+                "Job Description Text *",
+                value=st.session_state.get("jd_text", ""),
+                height=180,
+                placeholder="Paste the JD here or it will auto-fill from the current JD..."
+            )
+            save_tmpl_btn = st.form_submit_button("💾 Save Template", use_container_width=True)
+
+        if save_tmpl_btn:
+            if not tmpl_name.strip():
+                st.warning("⚠️ Please provide a template name.")
+            elif not tmpl_jd_text.strip():
+                st.warning("⚠️ JD text cannot be empty.")
+            else:
+                try:
+                    db_gen = get_db()
+                    db = next(db_gen)
+                    create_jd_template(db, name=tmpl_name.strip(), jd_text=tmpl_jd_text.strip(), job_title=tmpl_title.strip())
+                    db.close()
+                    st.success(f"✅ Template '{tmpl_name}' saved successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Save error: {e}")
+
+        st.markdown("---")
+        st.markdown("### 📚 Saved Templates")
+        try:
+            db_gen = get_db()
+            db = next(db_gen)
+            templates = get_all_jd_templates(db)
+            db.close()
+
+            if not templates:
+                st.info("No templates saved yet. Save a JD above to get started.")
+            else:
+                for tmpl in templates:
+                    with st.expander(f"📄 {tmpl.name}  ·  {tmpl.created_at.strftime('%Y-%m-%d')}"):
+                        st.markdown(f"**Job Title:** {tmpl.job_title or 'N/A'}")
+                        st.text_area("JD Text", value=tmpl.jd_text, height=150, key=f"tmpl_view_{tmpl.id}", disabled=True)
+                        tc1, tc2 = st.columns(2)
+                        with tc1:
+                            if st.button(f"📥 Load into JD", key=f"load_tmpl_{tmpl.id}", use_container_width=True):
+                                st.session_state["jd_text"] = tmpl.jd_text
+                                st.session_state["jd_submitted"] = True
+                                st.success(f"✅ Loaded '{tmpl.name}' into the Job Description!")
+                                st.rerun()
+                        with tc2:
+                            if st.button(f"🗑️ Delete", key=f"del_tmpl_{tmpl.id}", use_container_width=True):
+                                try:
+                                    db_gen = get_db()
+                                    db = next(db_gen)
+                                    delete_jd_template(db, tmpl.id)
+                                    db.close()
+                                    st.success("✅ Template deleted.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Delete error: {e}")
+        except Exception as e:
+            st.error(f"Error loading templates: {e}")
+
+    # ── AI HR Chatbot Page ───────────────────────────────────────────────────
+    elif "AI Chat" in source:
+        st.markdown("## 💬 AI HR Chatbot")
+        st.markdown("Ask anything about the candidates in your database. Powered by RAG + Groq LLM.")
+        st.markdown("---")
+
+        # Initialize chat session state
+        if "chat_messages" not in st.session_state:
+            st.session_state["chat_messages"] = [
+                {"role": "assistant", "content": "👋 Hi! I'm your AI HR assistant. Ask me anything about the candidates — for example:\n\n• Who has the highest score?\n• Show me candidates who know Python\n• How many candidates were accepted?"}
+            ]
+
+        # Chat controls
+        chat_ctrl_col1, chat_ctrl_col2 = st.columns([6, 1])
+        with chat_ctrl_col2:
+            if st.button("🗑️ Clear Chat", use_container_width=True):
+                st.session_state["chat_messages"] = [
+                    {"role": "assistant", "content": "Chat cleared. How can I help you?"}
+                ]
+                st.rerun()
+
+        # Display chat history
+        for msg in st.session_state["chat_messages"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        # Chat input
+        user_question = st.chat_input("Ask about your candidates...")
+        if user_question:
+            # Add user message
+            st.session_state["chat_messages"].append({"role": "user", "content": user_question})
+            with st.chat_message("user"):
+                st.markdown(user_question)
+
+            # Get AI response
+            with st.chat_message("assistant"):
+                with st.spinner("🤔 Thinking..."):
+                    try:
+                        db_gen = get_db()
+                        db = next(db_gen)
+                        response = get_chatbot_response(user_question, db)
+                        db.close()
+                    except Exception as e:
+                        response = f"❌ Error: {str(e)}"
+                st.markdown(response)
+                st.session_state["chat_messages"].append({"role": "assistant", "content": response})
 
 if __name__ == "__main__":
     run_streamlit()
