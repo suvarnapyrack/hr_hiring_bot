@@ -6,7 +6,7 @@
 
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
-from app.utils import (
+from app.services import (
     choose_source,
     fetch_from_gmail,
     fetch_from_drive,

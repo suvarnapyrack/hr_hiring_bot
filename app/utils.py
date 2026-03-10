@@ -1451,20 +1451,31 @@ def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
             print("❌ No resume text found")
             return {**state, "analysis": {"skills": [], "education": "Unknown", "experience": "0"}}
 
+        from datetime import datetime as dt_now
+        today_date = dt_now.now().strftime("%B %d, %Y")  # e.g. "March 10, 2026"
+
         prompt = PromptTemplate.from_template("""
-You are an information extraction system.  
+You are an information extraction system.
+TODAY'S DATE IS: {today_date}
+
 Your task is to read the resume text and extract exactly this data:  
 - Top 10 relevant skills (list of strings)  
 - Education level (string)  
 - total_experience_years: Total professional work experience in years (string, e.g., "2", "3.5", "0")
 
-Rules for total_experience_years:
-1. Count ONLY if the resume explicitly states the duration in years/months or has start and end dates.
-2. If duration is in months, convert to years with one decimal place (e.g., "5 months" → "0.4").
-3. If multiple experiences are listed, sum them up.
-4. Do NOT infer or guess based on skills, job titles, or education.
-5. If no explicit duration is mentioned, return "0".
-6. Never round up — keep the exact lower bound.
+CRITICAL RULES for total_experience_years:
+1. Find ALL work experiences, internships, and professional roles listed in the resume.
+2. For EACH experience entry, calculate duration:
+   - If it says "Present", "Current", "Till Date", or "Ongoing", use TODAY'S DATE ({today_date}) as the end date.
+   - Calculate: (end_date - start_date) in years with one decimal place.
+   - Example: "March 2024 – Present" with today being {today_date} = approximately 2.0 years.
+3. SUM the durations of ALL experience entries together.
+   - Example: If a candidate has 3 experiences: 1.5 years + 0.8 years + 0.5 years = "2.8"
+4. If duration is in months, convert to years: e.g., "5 months" = "0.4".
+5. Do NOT return only the most recent experience. You MUST sum ALL of them.
+6. Do NOT infer experience from skills or education. Only count explicitly stated work periods.
+7. If no explicit duration or dates are mentioned, return "0".
+8. Never round up — keep the exact lower bound with one decimal place.
 
 You must respond with **only valid JSON**. No explanation. No extra words.  
 If a field is missing in the resume, use defaults: [] for skills, "Unknown" for education, "0" for experience.  
@@ -1476,12 +1487,12 @@ JSON response format (strictly follow this):
 {{
   "skills": ["Python", "TensorFlow", "..."],
   "education": "Bachelor of Pharmacy",
-  "experience": "0.8"
+  "experience": "2.8"
 }}
 """)
 
         chain = prompt | llm
-        response = chain.invoke({"resume": resume_text})
+        response = chain.invoke({"resume": resume_text, "today_date": today_date})
         raw_response = response.content.strip()
         print("✅ LLM raw response:\n", raw_response)
 

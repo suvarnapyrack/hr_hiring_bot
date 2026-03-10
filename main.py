@@ -14,8 +14,8 @@ import json
 import pandas as pd
 
 # Import your updated functions
-from app.utils import rank_top_candidates, fetch_from_gmail, fetch_from_drive 
-from app.utils import extract_text_from_pdf, parse_resume
+from app.services import rank_top_candidates, fetch_from_gmail, fetch_from_drive 
+from app.services import extract_text_from_pdf, parse_resume
 from app.langgraph_flow import graph
 from app.database import get_db
 from app.models import Candidate, JobDescription, Resume
