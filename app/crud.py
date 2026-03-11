@@ -60,16 +60,22 @@ def create_job_description(db: Session, job_type: str, jd_text: str) -> JobDescr
 
 def save_resume_analysis(db: Session, candidate_id: int, file_path: str, source: str, result_state: Dict, job_id: Optional[int] = None) -> Resume:
     """Saves the final processed resume state into the database."""
+    score = result_state.get('score', 0.0)
+    hiring_status = "Accept" if score >= 6.5 else "Reject"
+    if result_state.get('experience_filtered', False):
+        hiring_status = "Rejected (Experience)"
+        
     resume = Resume(
         candidate_id=candidate_id,
         job_id=job_id,
         file_path=file_path,
         source=source,
         similarity_score=result_state.get('similarity_score', 0.0),
-        final_score=result_state.get('score', 0.0),
+        final_score=score,
         llm_score=result_state.get('llm_score', 0.0),
         embedding_score=result_state.get('embedding_score', 0.0),
-        status="Processed" if result_state.get('score', 0) > 0 else "Error",
+        status="Processed" if score > 0 else "Error",
+        hiring_status=hiring_status,
         error_message=result_state.get("error") if "error" in result_state else None
     )
     db.add(resume)

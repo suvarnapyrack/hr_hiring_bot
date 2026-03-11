@@ -53,6 +53,7 @@ class Resume(Base):
     # LangGraph pipeline status
     status = Column(String(50), default="Pending") # Pending, Processed, Error
     error_message = Column(Text, nullable=True)
+    hiring_status = Column(String(50), nullable=True) # Accept, Reject, etc.
     
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -13,10 +13,10 @@ from datetime import datetime, timedelta
 import json
 import pandas as pd
 
+import requests
+
 # Import your updated functions
-from app.services import rank_top_candidates, fetch_from_gmail, fetch_from_drive 
-from app.services import extract_text_from_pdf, parse_resume
-from app.langgraph_flow import graph
+from app.services.core import extract_text_from_pdf
 from app.database import get_db
 from app.models import Candidate, JobDescription, Resume
 from sqlalchemy import func
@@ -25,7 +25,6 @@ from typing import Dict
 # New feature imports
 from app.analytics import show_analytics_page
 from app.report_generator import export_to_excel, export_to_pdf
-from app.chatbot import get_chatbot_response
 from app.crud import (
     search_candidates,
     create_jd_template,
@@ -39,106 +38,7 @@ from app.crud import (
 
 load_dotenv()
 
-def process_resumes(resume_items, jd_text, source_type="manual"):
-    """Process multiple resumes using the LangGraph pipeline"""
-    all_results = []
-
-    for i, item in enumerate(resume_items):
-        if isinstance(item, dict):
-            path = item.get("filepath") or item.get("file_path")
-            sender = item.get("sender_email", "Unknown")
-            filename = item.get("filename", f"resume_{i}")
-        else:
-            path = item
-            sender = "Unknown"
-            filename = f"resume_{i}"
-
-        if not path or not os.path.exists(path):
-            st.warning(f"⚠️ File not found: {path}")
-            continue
-
-        try:
-            resume_text = ""
-            if path.lower().endswith('.pdf'):
-                # extract_text_from_pdf returns (text, requires_ocr) tuple
-                resume_text, _ = extract_text_from_pdf(path)
-            elif path.lower().endswith(('.docx', '.doc')):
-                with open(path, 'r', encoding='utf-8') as f:
-                    resume_text = f.read()
-            
-            if not resume_text.strip():
-                st.warning(f"⚠️ Could not extract text from: {filename}")
-                continue
-
-            initial_state = {
-                "source_type": source_type,
-                "jd_text": jd_text,
-                "resume": path,
-                "resume_text": resume_text,
-                "mobile": "",
-                "email": "",
-                "name": "",
-                "similarity_score": 0,
-                "llm_score": 0,
-                "embedding_score": 0,
-                "job_type": "",
-                "analysis": {},
-                "score": 0,
-                "experience_filtered": False,
-                "rank": 0,
-                "address": ""
-            }
-
-            parsed_state = parse_resume(initial_state)
-            
-            st.info(f"🔍 Parsing: {filename}")
-            st.info(f"   📝 {parsed_state.get('name', 'Not found')} | 📧 {parsed_state.get('email', 'Not found')}")
-
-            result_state = graph.invoke(parsed_state)
-
-            name = result_state.get("name")
-            email = result_state.get("email")
-            mobile = result_state.get("mobile")
-            address = result_state.get("address")
-
-            score = result_state.get("score", 0)
-            feedback = "Accept" if score >= 6.5 else "Reject"
-
-            if result_state.get("experience_filtered", False):
-                feedback = "Rejected (Experience)"
-                st.info(f"📋 {name}: Filtered out due to insufficient experience")
-
-            analysis = result_state.get("analysis", {})
-
-            result_data = {
-                "name": name,
-                "email": email,
-                "score": score,
-                "feedback": feedback,
-                "mobile": mobile,
-                "address": address,
-                "resume_path": path,
-                "filename": filename,
-                "job_type": result_state.get("job_type", "Unknown"),
-                "skills": analysis.get("skills", []),
-                "education": analysis.get("education", "Unknown"),
-                "experience": analysis.get("experience", "0"),
-                "similarity_score": result_state.get("similarity_score", 0),
-                "llm_score": result_state.get("llm_score", 0),
-                "embedding_score": result_state.get("embedding_score", 0),
-                "resume_id": f"resume_{i}",
-            }
-
-            all_results.append(result_data)
-            st.success(f"✅ Processed {name} - Score: {score}")
-
-        except Exception as e:
-            st.error(f"❌ Error processing {filename}: {str(e)}")
-            import traceback
-            st.error(traceback.format_exc())
-            continue
-
-    return all_results
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 def load_custom_css():
     st.markdown("""
@@ -829,14 +729,15 @@ def run_streamlit():
                 else:
                     with st.spinner("📡 Connecting to Gmail..."):
                         try:
-                            state = {}
-                            items_state = fetch_from_gmail(
-                                state, 
-                                download_dir="resumes/gmail", 
-                                limit=st.session_state["max_resumes"],
-                                days_limit=st.session_state["days_limit"]
+                            response = requests.get(
+                                f"{API_URL}/api/fetch/gmail",
+                                params={
+                                    "days_limit": st.session_state["days_limit"],
+                                    "max_resumes": st.session_state["max_resumes"]
+                                }
                             )
-                            items = items_state.get("resumes", [])
+                            response.raise_for_status()
+                            items = response.json().get("data", [])
 
                             st.session_state["resume_items"] = items or []
                             st.session_state["source_type"] = "gmail"
@@ -913,14 +814,12 @@ def run_streamlit():
         if st.button("📥 Fetch from Drive", width="stretch"):
             with st.spinner("📡 Connecting to Google Drive..."):
                 try:
-                    initial_state = {
-                        "source_type": "drive",
-                        "jd_text": st.session_state.get("jd_text", ""),
-                        "resume": None
-                    }
-                    
-                    state = {} 
-                    items = fetch_from_drive(initial_state, limit=st.session_state["max_resumes"])
+                    response = requests.get(
+                        f"{API_URL}/api/fetch/drive",
+                        params={"max_resumes": st.session_state["max_resumes"]}
+                    )
+                    response.raise_for_status()
+                    items = response.json().get("data", [])
                     st.session_state["resume_items"] = items
                     st.session_state["source_type"] = "drive"
                     st.success("✅ Successfully fetched resumes from Drive!")
@@ -972,16 +871,21 @@ def run_streamlit():
                         
                         try:
                             source_type = st.session_state.get("source_type", "manual")
-                            results = process_resumes(
-                                st.session_state["resume_items"], 
-                                st.session_state["jd_text"],
-                                source_type
-                            )
+                            payload = {
+                                "resume_items": st.session_state["resume_items"],
+                                "jd_text": st.session_state["jd_text"],
+                                "source_type": source_type
+                            }
+                            response = requests.post(f"{API_URL}/api/process", json=payload)
                             
-                            st.session_state["results"] = results
-                            st.session_state["processing_complete"] = True
-                            progress_bar.progress(100)
-                            status_text.success(f"✅ Successfully processed {len(results)} resumes!")
+                            if response.status_code == 200:
+                                results = response.json().get("data", [])
+                                st.session_state["results"] = results
+                                st.session_state["processing_complete"] = True
+                                progress_bar.progress(100)
+                                status_text.success(f"✅ Successfully processed {len(results)} resumes!")
+                            else:
+                                st.error(f"❌ API Error: {response.text}")
                             
                         except Exception as e:
                             st.error(f"❌ Processing error: {e}")
@@ -1277,9 +1181,14 @@ def run_streamlit():
             with st.chat_message("assistant"):
                 with st.spinner("🤔 Thinking..."):
                     try:
-                        db_gen = get_db()
-                        db = next(db_gen)
-                        response = get_chatbot_response(user_question, db)
+                        api_res = requests.post(
+                            f"{API_URL}/api/chat",
+                            json={"question": user_question}
+                        )
+                        if api_res.status_code == 200:
+                            response = api_res.json().get("answer", "No answer found.")
+                        else:
+                            response = f"❌ API Error: {api_res.text}"
                         
                         # Save assistant message
                         save_chat_message(db, role="assistant", content=response)

@@ -31,3 +31,6 @@ pytesseract
 plotly
 fpdf2
 chromadb
+fastapi
+uvicorn
+python-multipart

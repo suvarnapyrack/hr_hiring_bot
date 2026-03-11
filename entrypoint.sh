@@ -23,5 +23,5 @@ done
 echo "🔧 Running Database Initializations..."
 python app/init_db.py
 
-echo "🚀 Starting Streamlit App..."
-exec streamlit run main.py --server.port=8501 --server.address=0.0.0.0
+echo "🚀 Starting Service..."
+exec "$@"

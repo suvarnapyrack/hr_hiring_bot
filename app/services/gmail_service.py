@@ -56,6 +56,11 @@ def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail", limit: in
     user_email = os.getenv("GMAIL_USER")
     app_password = os.getenv("GMAIL_PASS")
 
+    if user_email:
+        user_email = user_email.strip()
+    if app_password:
+        app_password = app_password.strip()
+
     if not user_email or not app_password:
         print("❌ Gmail credentials not found in environment variables.")
         return {**state, "resumes": []}

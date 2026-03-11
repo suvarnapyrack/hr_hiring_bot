@@ -36,7 +36,7 @@ Rules:
 - For name: Extract the candidate's full name (usually at the top of resume)
 - For email: Extract valid email address
 - For mobile: Extract phone number, format as +91 XXXXXXXXXX if Indian number  
-- For address: Extract complete address or at least city/location
+- For address: Extract complete address or at least city/location  
 - Return "Not found" if information is not available
 - Return only the JSON, no other text
 """
@@ -209,15 +209,68 @@ def compute_similarity(state: ResumeState) -> ResumeState:
 
 def classify_resume(state: ResumeState) -> ResumeState:
     """Classify into job categories."""
-    prompt = PromptTemplate.from_template("Classify resume into category. Categories: AI Engineer, Data Analyst, etc. JD: {jd} Resume: {resume}. Return category name only.")
+    # prompt = PromptTemplate.from_template("Classify resume into category. Categories: AI Engineer, Data Analyst, etc. JD: {jd} Resume: {resume}. Return category name only.")
+    prompt = PromptTemplate.from_template("""
+        You are an expert HR recruiter classifying resumes based on job descriptions.
+        
+        Task: Classify the candidate's Resume into one of the exact Job Categories listed below based on their skills and experience.
+        If the Resume does NOT match the Job Description or does not fit any of the listed categories well, you MUST output "N/A".
+
+        Job Categories List:
+        - AI Engineer
+        - Data Analyst
+        - Machine Learning Engineer
+        - Data Annotator
+        - UI/UX Designer
+        - Backend Developer
+        - Frontend Developer
+        - Full Stack Developer
+        - DevOps Engineer
+        - Hr Executive
+        - Hr intern 
+        - bussiness development intern
+        - bussiness Analyst
+        - bussiness analyst intern
+
+        Job Description:
+        {jd}
+
+        Resume:
+        {resume}
+
+        Instructions:
+        1. Only return the exact name of the job category from the list above.
+        2. Do not include any explanations, punctuation, or other text.
+        3. If the resume is completely unrelated to the job description, return "N/A".
+        """)
     resp = llm.invoke(prompt.format(jd=state.get("jd_text", ""), resume=state.get("resume_text", "")))
     return {**state, "job_type": resp.content.strip()}
 
 def score_resume(state: ResumeState) -> ResumeState:
-    """Calculate final weighted score."""
-    sim = state.get("similarity_score", 0)
-    # Simplified logic from utils.py
-    return {**state, "score": sim}
+    """Calculate final weighted score and filter by experience."""
+    MIN_SIMILARITY_THRESHOLD = 5
+    
+    def extract_required_experience(jd_text):
+        match = re.search(r"(\d+)[+\s]*years? of experience", jd_text.lower())
+        return int(match.group(1)) if match else None
+    
+    similarity = state.get("similarity_score", 0)
+    analysis = state.get("analysis", {})
+
+    if similarity < MIN_SIMILARITY_THRESHOLD:
+        return {**state, "score": 0, "experience_filtered": False}
+    
+    req_exp = extract_required_experience(state.get("jd_text", ""))
+    try:
+        candidate_exp = float(analysis.get("experience", 0))
+    except (ValueError, TypeError):
+        candidate_exp = 0.0
+
+    if req_exp is not None and candidate_exp < req_exp:
+        print(f"❌ Rejected: Needs {req_exp}+ years, has {candidate_exp} years")
+        return {**state, "score": 0, "experience_filtered": True}
+
+    return {**state, "score": similarity, "experience_filtered": False}
 
 def save_to_db_node(state: ResumeState) -> ResumeState:
     """Save processed data to DB."""

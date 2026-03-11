@@ -22,17 +22,36 @@ services:
   hr_hiring_bot:
     build: .
     container_name: hr_hiring_bot_container
+    command: ["streamlit", "run", "main.py", "--server.port=8501", "--server.address=0.0.0.0"]
     ports:
       - "8501:8501"
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/hr_bot_db
+      - API_URL=http://api:8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     dns:
       - 8.8.8.8
       - 8.8.4.4
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+
+  api:
+    build: .
+    container_name: hr_api_backend
+    command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/hr_bot_db
     volumes:
       - .:/app
     depends_on:
