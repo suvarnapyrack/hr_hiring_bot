@@ -1,5 +1,5 @@
 """
-report_generator.py — Excel and PDF export for HR Hiring Bot
+report_generator.py - Excel and PDF export for HR Hiring Bot
 """
 
 import io
@@ -42,7 +42,7 @@ def export_to_excel(results: List[Dict]) -> bytes:
     # ── Title row ─────────────────────────────────────────────────────────────
     ws.merge_cells("A1:K1")
     title_cell = ws["A1"]
-    title_cell.value = f"HR Hiring Bot — Candidate Report   ({datetime.now().strftime('%Y-%m-%d %H:%M')})"
+    title_cell.value = f"HR Hiring Bot - Candidate Report   ({datetime.now().strftime('%Y-%m-%d %H:%M')})"
     title_cell.font = Font(name="Calibri", bold=True, size=14, color="1E293B")
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     title_cell.fill = PatternFill("solid", fgColor="EEF2FF")
@@ -129,7 +129,7 @@ def export_to_pdf(results: List[Dict]) -> bytes:
             self.set_font("Helvetica", "B", 13)
             self.set_text_color(255, 255, 255)
             self.set_y(4)
-            self.cell(0, 10, "HR Hiring Bot — Candidate Report", align="C")
+            self.cell(0, 10, "HR Hiring Bot - Candidate Report", align="C")
             self.set_text_color(0, 0, 0)
             self.ln(16)
 
