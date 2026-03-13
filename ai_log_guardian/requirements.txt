@@ -2,3 +2,7 @@ docker
 requests
 twilio
 python-dotenv
+langgraph
+langchain-openai
+langchain-core
+langchain-community

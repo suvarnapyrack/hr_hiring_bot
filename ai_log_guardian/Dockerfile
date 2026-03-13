@@ -12,4 +12,6 @@ COPY . .
 # Environment variables (defaults)
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "main.py"]
+# Default: run in fully agentic LangGraph mode
+# Override with --mode simple for legacy rule-based mode
+CMD ["python", "main.py", "--mode", "agent"]
