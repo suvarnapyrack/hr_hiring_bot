@@ -13,6 +13,7 @@ An intelligent, AI-powered HR Assistant built with Streamlit, LangGraph, and Gro
 - **Analytics Dashboard**: Visualize score distributions, hiring trends, and skill frequencies using Plotly charts.
 - **Export to Excel/PDF**: Download comprehensive reports of candidate assessments easily.
 - **Template Management**: Save, reuse, and manage multiple JD templates.
+- **AI Log Guardian**: Real-time production log monitoring with LLM-powered root cause analysis and WhatsApp alerts (Twilio integration).
 
 ## 🛠 Tech Stack
 
@@ -31,7 +32,7 @@ An intelligent, AI-powered HR Assistant built with Streamlit, LangGraph, and Gro
 - Python 3.10+
 - [Docker & Docker Compose](https://www.docker.com/) (For containerized deployment)
 - Tesseract OCR & Poppler (if running locally without Docker)
-- API Keys: `GROQ_API_KEY`
+- API Keys: `GROQ_API_KEY`, `OPENROUTER_API_KEY` (optional), `TWILIO_ACCOUNT_SID` (optional)
 
 ### 1. Clone the repository
 Ensure you are in the project root directory.
@@ -61,6 +62,19 @@ pip install -r requirements.txt
 Ensure PostgreSQL is running locally and update the `DATABASE_URL` in `.env`. Initialize the DB and run the app:
 ```bash
 streamlit run main.py
+```
+
+### 🛡 AI Log Guardian (Log Monitoring)
+The AI Log Guardian microservice is automatically started with Docker Compose. It:
+1. Streams logs from the `hr_hiring_bot_container` and `hr_api_backend`.
+2. Detects `ERROR` or `CRITICAL` log levels.
+3. Analyzes errors using OpenRouter (Gemini 2.0 Flash) or Ollama fallback.
+4. Generates an incident report with root cause and suggested fixes.
+5. Sends a WhatsApp alert via Twilio to the configured user number.
+
+To view Log Guardian activity:
+```bash
+docker logs -f ai_log_guardian
 ```
 
 ---

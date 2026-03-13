@@ -59,5 +59,18 @@ services:
         condition: service_healthy
     restart: always
 
+  log_guardian:
+    build: ./ai_log_guardian
+    container_name: ai_log_guardian
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./ai_log_guardian:/app
+    env_file:
+      - .env
+    depends_on:
+      - hr_hiring_bot
+      - api
+    restart: always
+
 volumes:
   postgres_data:
