@@ -5,6 +5,7 @@ import logging
 import docker
 import hashlib
 import requests
+import re
 from typing import Annotated
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -25,6 +26,8 @@ logger = logging.getLogger("AgentCore")
 _incident_history: list[dict] = []
 _suppressed: dict[str, int] = {}   # hash -> suppressed_until timestamp
 _throttle_map: dict[str, int] = {} # hash -> last_alerted timestamp
+_last_poll: dict[str, float] = {}  # container_name -> timestamp of last poll
+_pattern_cache: dict[str, float] = {} # hash -> timestamp of last occurrence
 
 
 def _make_hash(container: str, log_line: str) -> str:
@@ -73,9 +76,9 @@ def analyze_log(container_name: str, log_line: str) -> str:
         container_name: The name of the container (for context).
         log_line: The specific log line to analyze.
     """
-    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+    groq_api_key = os.getenv("GROQ_API_KEY")
     ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-    model = os.getenv("LLM_MODEL", "google/gemini-2.0-flash-001")
+    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
     fallback_model = os.getenv("FALLBACK_MODEL", "llama3")
 
     prompt = f"""Analyze this log line from the Docker container '{container_name}':
@@ -91,9 +94,9 @@ Respond ONLY in valid JSON with these fields:
 """
 
     try:
-        if openrouter_api_key:
+        if groq_api_key:
             headers = {
-                "Authorization": f"Bearer {openrouter_api_key}",
+                "Authorization": f"Bearer {groq_api_key}",
                 "Content-Type": "application/json"
             }
             data = {
@@ -102,16 +105,22 @@ Respond ONLY in valid JSON with these fields:
                 "response_format": {"type": "json_object"}
             }
             resp = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                "https://api.groq.com/openai/v1/chat/completions",
                 headers=headers, data=json.dumps(data), timeout=30
             )
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            content = resp.json()["choices"][0]["message"]["content"]
+            if not content or not content.strip():
+                raise ValueError("LLM returned empty content")
+            return content
         else:
             data = {"model": fallback_model, "prompt": prompt, "stream": False, "format": "json"}
             resp = requests.post(ollama_url, data=json.dumps(data), timeout=60)
             resp.raise_for_status()
-            return resp.json().get("response", "{}")
+            content = resp.json().get("response", "{}")
+            if not content or not content.strip():
+                 return "{}"
+            return content
     except Exception as e:
         return json.dumps({
             "severity": "UNKNOWN",
@@ -227,23 +236,32 @@ def get_incident_history() -> str:
 # ─────────────────────────────────────────────
 # Build the LangGraph ReAct Agent
 # ─────────────────────────────────────────────
+def _filter_messages(messages):
+    """
+    Ensures no message content is empty before reaching the LLM API.
+    Gemini returns 400 if any message has empty 'parts' (content).
+    """
+    for m in messages:
+        if hasattr(m, "content") and (not m.content or (isinstance(m.content, str) and not m.content.strip())):
+            if hasattr(m, "tool_calls") and m.tool_calls:
+                # Assistant messages with tool calls but empty content are valid
+                pass
+            else:
+                m.content = "[No content]"
+    return messages
+
+
 def build_agent():
     """Creates and returns the LangGraph ReAct agent with all tools."""
-    
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("GROQ_API_KEY")
-    base_url = None
-    model_name = None
 
-    if os.getenv("OPENROUTER_API_KEY"):
-        base_url = "https://openrouter.ai/api/v1"
-        model_name = os.getenv("LLM_MODEL", "google/gemini-2.0-flash-001")
-        logger.info(f"Agent using OpenRouter model: {model_name}")
-    elif os.getenv("GROQ_API_KEY"):
-        base_url = "https://api.groq.com/openai/v1"
-        model_name = os.getenv("LLM_MODEL_NAME", "llama-3.3-70b-versatile")
-        logger.info(f"Agent using Groq model: {model_name}")
-    else:
-        raise EnvironmentError("No LLM API key found. Set OPENROUTER_API_KEY or GROQ_API_KEY in .env")
+    api_key = os.getenv("GROQ_API_KEY")
+    base_url = "https://api.groq.com/openai/v1"
+    model_name = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+
+    if not api_key:
+        raise EnvironmentError("No LLM API key found. Set GROQ_API_KEY in .env")
+
+    logger.info(f"Agent using Groq model: {model_name}")
 
     llm = ChatOpenAI(
         model=model_name,
@@ -267,22 +285,58 @@ def build_agent():
 
 SYSTEM_PROMPT = """You are AI Log Guardian, an expert DevOps monitoring agent.
 
-Your job is to autonomously monitor Docker container logs and respond to incidents intelligently.
+Your job is to autonomously analyze specific suspicious log lines provided to you and respond intelligently.
 
 RULES:
-1. Use `get_recent_logs` to fetch logs from ALL monitored containers each cycle.
-2. Scan for lines containing: ERROR, CRITICAL, FATAL, EXCEPTION, or Traceback.
-3. For each suspicious line, use `analyze_log` to understand it deeply.
-4. If analysis says is_noise=true OR severity is LOW → call `suppress_alert` with a reason.
-5. If severity is HIGH or CRITICAL AND is_actionable=true → call `send_alert`.
-6. NEVER send the same alert twice (throttling is built into `send_alert`).
-7. Always check `get_incident_history` before acting to avoid duplicates.
-8. Be smart: a single "Connection refused" may be transient; three in a row is an incident.
+1. You will be provided with specific suspicious log lines that have already passed initial pattern filtering.
+2. For each suspicious line provided, use `analyze_log` to understand it deeply. You may use `get_recent_logs` if you need more context before analyzing.
+3. If analysis says is_noise=true OR severity is LOW → call `suppress_alert` with a reason.
+4. If severity is MEDIUM, HIGH or CRITICAL AND is_actionable=true → call `send_alert`.
+5. NEVER send the same alert twice (throttling is built into `send_alert`).
+6. Always check `get_incident_history` before acting to avoid duplicates.
+7. Be smart: a single "Connection refused" may be transient; three in a row is an incident.
 
-Containers to monitor: {containers}
+Containers you are monitoring: {containers}
 
 Think step by step. Be conservative — only alert on real issues.
 """
+
+
+def get_filtered_errors(containers: list[str]) -> list[tuple[str, str]]:
+    """Returns a list of (container_name, log_line) that are new and unique."""
+    client = docker.from_env()
+    results = []
+    now = time.time()
+    
+    for name in containers:
+        try:
+            container = client.containers.get(name)
+            last_ts = _last_poll.get(name, now - 30)
+            logs = container.logs(since=int(last_ts), timestamps=True).decode("utf-8", errors="replace")
+            _last_poll[name] = now
+            
+            if not logs.strip():
+                continue
+                
+            for line in logs.splitlines():
+                if any(kw in line.upper() for kw in ["ERROR", "CRITICAL", "FATAL", "EXCEPTION", "TRACEBACK"]):
+                    # Pattern detection: remove timestamps, generic IDs to generalize the log pattern
+                    pattern = re.sub(r'\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(\.\d+)?Z?', '', line)
+                    pattern = re.sub(r'\b[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}\b', 'UUID', pattern)
+                    
+                    sig_hash = _make_hash(name, pattern)
+                    
+                    # Deduplication: if pattern hasn't been seen in the exact container in the last 10 minutes (600s), process it
+                    if now - _pattern_cache.get(sig_hash, 0) > 600:
+                        _pattern_cache[sig_hash] = now
+                        # clean log string up to limit tokens returned to LLM
+                        clean_line = line[:1000]
+                        results.append((name, clean_line))
+                        
+        except Exception as e:
+            logger.error(f"Error fetching logs for pattern detection for {name}: {e}")
+            
+    return results
 
 
 def run_agent_loop():
@@ -293,30 +347,65 @@ def run_agent_loop():
     poll_interval = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 
     agent = build_agent()
-    config = {"configurable": {"thread_id": "log-guardian-main"}}
+
+    containers_str = ", ".join(containers)
+    system_prompt = SYSTEM_PROMPT.format(containers=containers_str)
 
     logger.info(f"🤖 AI Log Guardian Agent started. Monitoring: {containers} every {poll_interval}s")
 
     cycle = 0
     while True:
         cycle += 1
-        logger.info(f"--- Agent Cycle #{cycle} ---")
+        
+        new_errors = get_filtered_errors(containers)
+        
+        if not new_errors:
+            # Sleeping peacefully, no LLM cost incurred
+            time.sleep(poll_interval)
+            continue
+            
+        logger.info(f"--- Agent Cycle #{cycle} --- Found {len(new_errors)} new suspicious logs!")
 
-        prompt = (
-            SYSTEM_PROMPT.format(containers=", ".join(containers))
-            + f"\n\nThis is monitoring cycle #{cycle}. "
-            + "Check all containers for new issues. Take all necessary actions."
-        )
+        # Use a fresh thread_id per cycle to avoid accumulating empty messages
+        # in history that trigger Gemini's 400 error.
+        config = {"configurable": {"thread_id": f"log-guardian-cycle-{cycle}"}}
+
+        instructions = "I found the following new suspicious logs that passed the pattern filter:\n\n"
+        for container, err in new_errors:
+            instructions += f"Container: {container}\nLog: {err}\n\n"
+        instructions += "Please analyze each of these logs using `analyze_log`. " \
+                        "If the severity is MEDIUM, HIGH or CRITICAL and actionable, use `send_alert`. " \
+                        "If it is LOW/noise, use `suppress_alert`. " \
+                        "Check `get_incident_history` to avoid duplicate alerts. Summarize your actions."
 
         try:
-            result = agent.invoke(
-                {"messages": [HumanMessage(content=prompt)]},
-                config=config
-            )
-            final_msg = result["messages"][-1].content
-            logger.info(f"Agent completed cycle #{cycle}. Summary: {final_msg[:300]}")
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=instructions),
+            ]
+
+            result = agent.invoke({"messages": messages}, config=config)
+
+            res_messages = result.get("messages", [])
+            if res_messages:
+                final_content = res_messages[-1].content
+                if final_content:
+                    logger.info(f"Agent completed cycle #{cycle}. Summary: {final_content[:300]}...")
+                else:
+                    logger.info(f"Agent completed cycle #{cycle} with empty summary.")
+            else:
+                logger.warning(f"Agent cycle #{cycle} returned no messages.")
+
         except Exception as e:
-            logger.error(f"Agent error in cycle #{cycle}: {e}")
+            # Better error logging for the specific 400 error
+            if "400" in str(e):
+                logger.error(f"FATAL: LLM rejected request in cycle #{cycle} (possibly empty content): {e}")
+            else:
+                logger.error(f"Agent error in cycle #{cycle}: {e}")
 
         logger.info(f"Sleeping {poll_interval}s until next cycle...")
         time.sleep(poll_interval)
+
+
+if __name__ == "__main__":
+    run_agent_loop()

@@ -7,15 +7,15 @@ logger = logging.getLogger("LLMAnalyzer")
 
 class LLMAnalyzer:
     def __init__(self):
-        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-        self.openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_url = "https://api.groq.com/openai/v1/chat/completions"
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-        self.model = os.getenv("LLM_MODEL", "google/gemini-2.0-flash-001")
+        self.model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
         self.fallback_model = os.getenv("FALLBACK_MODEL", "llama3")
 
     def analyze_log(self, container_name, log_content):
         """
-        Analyzes a log line using OpenRouter with Ollama fallback.
+        Analyzes a log line using Groq with Ollama fallback.
         """
         prompt = f"""
         Analyze the following error log from the container '{container_name}':
@@ -30,18 +30,18 @@ class LLMAnalyzer:
         """
 
         try:
-            if self.openrouter_api_key:
-                return self._query_openrouter(prompt)
+            if self.groq_api_key:
+                return self._query_groq(prompt)
             else:
-                logger.info("OpenRouter API key missing, falling back to Ollama.")
+                logger.info("Groq API key missing, falling back to Ollama.")
                 return self._query_ollama(prompt)
         except Exception as e:
             logger.error(f"Error during LLM analysis: {e}")
             return self._query_ollama(prompt)
 
-    def _query_openrouter(self, prompt):
+    def _query_groq(self, prompt):
         headers = {
-            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Authorization": f"Bearer {self.groq_api_key}",
             "Content-Type": "application/json"
         }
         data = {
@@ -49,7 +49,7 @@ class LLMAnalyzer:
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"}
         }
-        response = requests.post(self.openrouter_url, headers=headers, data=json.dumps(data))
+        response = requests.post(self.groq_url, headers=headers, data=json.dumps(data))
         response.raise_for_status()
         return response.json()['choices'][0]['message']['content']
 

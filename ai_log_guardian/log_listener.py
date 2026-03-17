@@ -20,18 +20,17 @@ class LogListener:
         """
         logger.info(f"Starting log stream for containers: {self.container_names}")
         
-        # We'll use a simple loop to poll or attach to containers.
-        # For a truly live stream, we can use client.containers.get(name).logs(stream=True)
-        # However, handling multiple containers in a single thread requires careful management.
+        last_poll = {name: time.time() - 30 for name in self.container_names}
         
         while True:
+            now = time.time()
             for name in self.container_names:
                 try:
                     container = self.client.containers.get(name)
-                    # Get recent logs (e.g., last 10 seconds) to avoid missing late arrival logs
-                    # while preventing duplicate processing of very old logs.
-                    # A better way for production is to track the last processed timestamp.
-                    logs = container.logs(since=int(time.time() - 10), timestamps=True).decode('utf-8')
+                    # Get recent logs since the last poll timestamp
+                    last_ts = last_poll.get(name, now - 30)
+                    logs = container.logs(since=int(last_ts), timestamps=True).decode('utf-8')
+                    last_poll[name] = now
                     
                     for line in logs.splitlines():
                         if any(keyword in line.upper() for keyword in self.error_keywords):
