@@ -187,6 +187,7 @@ def create_candidate_analysis_sheet(gc, sheet_id, candidate_data):
     """
     Create a new worksheet for candidate analysis.
     """
+    print("🔄 Creating 'candidate analysis' worksheet...")
     try:
         sh = gc.open_by_key(sheet_id)
         ws = sh.add_worksheet(title="candidate analysis", rows="1000", cols="20")
@@ -210,8 +211,11 @@ def fetch_from_drive(state=None, limit=5):
         return None
 
     try:
+        print("🔄 Initiating Google Drive resume fetch process...")
         candidate_data, gc, sheet_id, tracking_sheet = extract_candidate_data_from_main_sheet(limit=limit)
-        if not candidate_data: return []
+        if not candidate_data: 
+            print("❌ No candidate data extracted from main sheet.")
+            return []
         
         try:
             sh = gc.open_by_key(sheet_id)
@@ -252,6 +256,7 @@ def fetch_from_drive(state=None, limit=5):
                         analysis_sheet.append_row([candidate.get('name', ''), candidate.get('email', ''), candidate.get('mobile', ''), candidate.get('address', ''), '', '', candidate.get('stipend', ''), candidate.get('experience', ''), 0, 0, 'N/A', resume_url, f"Row {row_number} - Invalid URL"])
                     continue
                 
+                print(f"📥 Downloading resume file ID: {file_id}...")
                 request = drive_service.files().get_media(fileId=file_id)
                 fh = io.BytesIO()
                 downloader = MediaIoBaseDownload(fh, request)
@@ -261,6 +266,7 @@ def fetch_from_drive(state=None, limit=5):
                 fh.seek(0)
                 file_path = Path("resumes/from_drive") / f"{file_id}.pdf"
                 with open(file_path, "wb") as f: f.write(fh.read())
+                print(f"✅ Downloaded resume to {file_path}")
                 
                 candidate['filepath'] = str(file_path)
                 temp_state = {"resume": str(file_path), "jd_text": state.get("jd_text", "") if state else ""}

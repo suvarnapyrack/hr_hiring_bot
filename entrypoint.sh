@@ -3,7 +3,7 @@ set -e
 
 echo "⏳ Waiting for PostgreSQL to be ready..."
 # Wait for postgres to accept connections before running init
-for i in $(seq 1 30); do
+for i in $(seq 1 3); do
   if python -c "
 import psycopg2
 try:
@@ -16,7 +16,7 @@ except:
     echo "✅ PostgreSQL is ready!"
     break
   fi
-  echo "⏳ Waiting for DB... attempt $i/30"
+  echo "⏳ Waiting for DB... attempt $i/3"
   sleep 2
 done
 

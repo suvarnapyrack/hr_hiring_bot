@@ -34,3 +34,10 @@ chromadb
 fastapi
 uvicorn
 python-multipart
+
+
+
+# python==3.11
+# langgraph>=0.2.0
+# langchain>=0.2
+# langchain-openai

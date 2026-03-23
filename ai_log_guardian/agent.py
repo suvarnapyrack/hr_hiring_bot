@@ -76,52 +76,15 @@ def analyze_log(container_name: str, log_line: str) -> str:
         container_name: The name of the container (for context).
         log_line: The specific log line to analyze.
     """
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-    model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
-    fallback_model = os.getenv("FALLBACK_MODEL", "llama3")
-
-    prompt = f"""Analyze this log line from the Docker container '{container_name}':
-
-LOG: {log_line}
-
-Respond ONLY in valid JSON with these fields:
-- severity: one of LOW, MEDIUM, HIGH, CRITICAL
-- root_cause: short explanation (1-2 sentences)
-- suggested_fix: concrete step(s) to resolve
-- is_actionable: true or false
-- is_noise: true if this is a routine/expected message, false if it needs attention
-"""
-
     try:
-        if groq_api_key:
-            headers = {
-                "Authorization": f"Bearer {groq_api_key}",
-                "Content-Type": "application/json"
-            }
-            data = {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"}
-            }
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers=headers, data=json.dumps(data), timeout=30
-            )
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
-            if not content or not content.strip():
-                raise ValueError("LLM returned empty content")
-            return content
-        else:
-            data = {"model": fallback_model, "prompt": prompt, "stream": False, "format": "json"}
-            resp = requests.post(ollama_url, data=json.dumps(data), timeout=60)
-            resp.raise_for_status()
-            content = resp.json().get("response", "{}")
-            if not content or not content.strip():
-                 return "{}"
-            return content
+        from llm_analyzer import LLMAnalyzer
+        analyzer = LLMAnalyzer()
+        content = analyzer.analyze_log(container_name, log_line)
+        if not content or not content.strip():
+             return "{}"
+        return content
     except Exception as e:
+        import json
         return json.dumps({
             "severity": "UNKNOWN",
             "root_cause": f"Analysis failed: {e}",
@@ -343,7 +306,17 @@ def run_agent_loop():
     """
     Main agentic loop: runs the LangGraph agent every POLL_INTERVAL seconds.
     """
-    containers = os.getenv("MONITOR_CONTAINERS", "hr_hiring_bot_container,hr_api_backend").split(",")
+    containers_env = os.getenv("MONITOR_CONTAINERS", "all")
+    if (containers_env or "").lower() == "all":
+        try:
+            client = docker.from_env()
+            containers = [c.name for c in client.containers.list()]
+        except Exception as e:
+            logger.error(f"Auto-discovery failed: {e}")
+            containers = ["hr_hiring_bot_container", "hr_api_backend"]
+    else:
+        containers = containers_env.split(",")
+        
     poll_interval = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 
     agent = build_agent()

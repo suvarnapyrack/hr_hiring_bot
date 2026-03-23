@@ -1494,7 +1494,7 @@ JSON response format (strictly follow this):
         chain = prompt | llm
         response = chain.invoke({"resume": resume_text, "today_date": today_date})
         raw_response = response.content.strip()
-        print("✅ LLM raw response:\n", raw_response)
+        # print("✅ LLM raw response:\n", raw_response)
 
         raw_response = re.sub(r"```(json)?", "", raw_response).strip()
         
@@ -1744,7 +1744,6 @@ def score_resume(state: ResumeState) -> ResumeState:
     print(f"✅ Final adjusted score: {score}")
 
     return {**state, "score": score, "experience_filtered": False}
-
 
 def save_to_db_node(state: ResumeState) -> ResumeState:
     """

@@ -13,6 +13,7 @@ def parse_resume(state: Dict) -> Dict:
     Extracts and cleans text from a resume PDF, and uses Groq LLM to extract candidate information.
     """
     resume_path = state.get("resume")
+    print(f"🔄 Parsing resume: {resume_path}...")
     if not resume_path or not os.path.exists(resume_path):
         print("❌ Resume file not found")
         return {**state, "resume_text": "", "mobile": "Not found", "email": "Not found", "name": "Not found", "address": "Not found", "requires_ocr": False}
@@ -98,6 +99,7 @@ Rules:
 
 def analyze_skills_education_experience(state: ResumeState) -> ResumeState:
     """Extract skills, education, and experience using LLM."""
+    print("🔄 Analyzing skills, education, and experience...")
     import ast
     from datetime import datetime
 
@@ -148,7 +150,7 @@ JSON response format (strictly follow this):
         chain = prompt | llm
         response = chain.invoke({"resume": resume_text, "today_date": today_date})
         raw_response = response.content.strip()
-        print("✅ LLM raw response:\n", raw_response)
+        # print("✅ LLM raw response:\n", raw_response)
 
         raw_response = re.sub(r"```(json)?", "", raw_response).strip()
 
@@ -188,6 +190,7 @@ JSON response format (strictly follow this):
 
 def compute_similarity(state: ResumeState) -> ResumeState:
     """Compute combined LLM and Embedding similarity."""
+    print("🔄 Computing similarity score against Job Description...")
     jd, resume = state.get("jd_text", ""), state.get("resume_text", "")
     if not jd or not resume: return {**state, "similarity_score": 0}
 
@@ -209,6 +212,7 @@ def compute_similarity(state: ResumeState) -> ResumeState:
 
 def classify_resume(state: ResumeState) -> ResumeState:
     """Classify into job categories."""
+    print("🔄 Classifying resume into job categories...")
     # prompt = PromptTemplate.from_template("Classify resume into category. Categories: AI Engineer, Data Analyst, etc. JD: {jd} Resume: {resume}. Return category name only.")
     prompt = PromptTemplate.from_template("""
         You are an expert HR recruiter classifying resumes based on job descriptions.
@@ -248,6 +252,7 @@ def classify_resume(state: ResumeState) -> ResumeState:
 
 def score_resume(state: ResumeState) -> ResumeState:
     """Calculate final weighted score and filter by experience."""
+    print("🔄 Calculating final resume score...")
     MIN_SIMILARITY_THRESHOLD = 5
     
     def extract_required_experience(jd_text):
@@ -274,6 +279,7 @@ def score_resume(state: ResumeState) -> ResumeState:
 
 def save_to_db_node(state: ResumeState) -> ResumeState:
     """Save processed data to DB."""
+    print(f"🔄 Saving candidate {state.get('name', 'Unknown')} to database...")
     from app.database import get_db
     from app.crud import create_or_update_candidate, save_resume_analysis, create_job_description
     db = next(get_db())
@@ -287,6 +293,7 @@ def save_to_db_node(state: ResumeState) -> ResumeState:
 
 def rank_top_candidates(processed_resumes):
     """Rank candidates based on their scores"""
+    print(f"🔄 Ranking top candidates from a pool of {len(processed_resumes)} resumes...")
     scored_resumes = [res for res in processed_resumes if res.get("score", 0) > 0]
     scored_resumes.sort(key=lambda x: x["score"], reverse=True) 
 

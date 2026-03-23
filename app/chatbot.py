@@ -250,10 +250,9 @@ def _get_candidate_documents(db: Session) -> tuple[List[str], List[dict], List[s
 
 # ─── Build / refresh ChromaDB vectorstore ─────────────────────────────────────
 
-def build_vectorstore(db: Session):
+def ingest_data(db: Session):
     """
-    Builds an in-memory ChromaDB collection from all candidates in the DB.
-    Returns the collection object (or None if no candidates exist).
+    Ingest candidates into a persistent ChromaDB collection.
     """
     try:
         import chromadb
@@ -269,25 +268,24 @@ def build_vectorstore(db: Session):
         model_name="all-MiniLM-L6-v2"
     )
 
-    client = chromadb.Client()  # in-memory
-
-    # Drop old collection if rebuilding
-    try:
-        client.delete_collection("hr_candidates")
-    except Exception:
-        pass
-
-    collection = client.create_collection(
+    client = chromadb.PersistentClient(path="./chroma_db")
+    
+    collection = client.get_or_create_collection(
         name="hr_candidates",
-        embedding_function=embedding_fn,
+        embedding_function=embedding_fn
     )
-    collection.add(documents=documents, metadatas=metadatas, ids=ids)
+
+    collection.upsert(
+        documents=documents,
+        metadatas=metadatas,
+        ids=ids
+    )
     return collection
 
 
 # ─── RAG Query ────────────────────────────────────────────────────────────────
 
-def _build_context(collection, question: str, n_results: int = 20) -> str:
+def _build_context(collection, question: str, n_results: int = 10) -> str:
     """Retrieve top-k candidate docs relevant to the question."""
     results = collection.query(query_texts=[question], n_results=min(n_results, collection.count()))
     docs = results.get("documents", [[]])[0]
@@ -306,7 +304,7 @@ def ask_hr_chatbot(question: str, collection, groq_api_key: str, model: str = "l
     except ImportError:
         raise ImportError("groq package not installed. Run: pip install groq")
 
-    context = _build_context(collection, question, n_results=20)
+    context = _build_context(collection, question, n_results=10)
 
     from datetime import datetime
     current_date = datetime.now().strftime("%Y-%m-%d")
@@ -337,21 +335,47 @@ def ask_hr_chatbot(question: str, collection, groq_api_key: str, model: str = "l
 
 # ─── Main UI entry point ──────────────────────────────────────────────────────
 
+cache = {}
+
+def cached_query(question: str, collection, groq_api_key: str) -> str:
+    if question in cache:
+        return cache[question]
+
+    answer = ask_hr_chatbot(question, collection, groq_api_key)
+    cache[question] = answer
+    return answer
+
 def get_chatbot_response(question: str, db: Session) -> str:
     """
     High-level function called from main.py.
-    Builds the vectorstore (fresh each call for simplicity) and runs RAG.
+    Queries the persistent vectorstore and runs RAG.
     """
     groq_api_key = os.getenv("GROQ_API_KEY", "")
     if not groq_api_key:
         return "❌ GROQ_API_KEY not found in environment variables."
 
-    collection = build_vectorstore(db)
-    if collection is None:
+    try:
+        import chromadb
+        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+    except ImportError:
+        return "❌ chromadb is not installed."
+
+    client = chromadb.PersistentClient(path="./chroma_db")
+    embedding_fn = SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2"
+    )
+    
+    try:
+        collection = client.get_collection(name="hr_candidates", embedding_function=embedding_fn)
+    except Exception:
+        # Collection might not exist yet if ingest_data hasn't been run
+        return "💡 No candidates in the database yet. Process some resumes first, then ask me about them!"
+
+    if collection.count() == 0:
         return "💡 No candidates in the database yet. Process some resumes first, then ask me about them!"
 
     try:
-        answer = ask_hr_chatbot(question, collection, groq_api_key)
+        answer = cached_query(question, collection, groq_api_key)
         return answer
     except Exception as e:
         return f"❌ Error generating response: {str(e)}"

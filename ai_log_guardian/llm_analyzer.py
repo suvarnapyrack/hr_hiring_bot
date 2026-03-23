@@ -18,15 +18,16 @@ class LLMAnalyzer:
         Analyzes a log line using Groq with Ollama fallback.
         """
         prompt = f"""
-        Analyze the following error log from the container '{container_name}':
+        Analyze this log line from the Docker container '{container_name}':
         
         LOG: {log_content}
         
-        Provide the following in JSON format:
-        1. severity: (LOW, MEDIUM, HIGH, CRITICAL)
-        2. root_cause: Brief explanation of why this happened.
-        3. suggested_fix: Steps to resolve the issue.
-        4. is_actionable: Boolean.
+        Respond ONLY in valid JSON with these fields:
+        - severity: one of LOW, MEDIUM, HIGH, CRITICAL
+        - root_cause: short explanation (1-2 sentences)
+        - suggested_fix: concrete step(s) to resolve
+        - is_actionable: true or false
+        - is_noise: true if this is a routine/expected message, false if it needs attention
         """
 
         try:

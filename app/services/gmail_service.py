@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from .shared_types import ResumeState
 
 def fetch_resumes_from_gmail(user_email: str, app_password: str, download_dir: str = "resumes/gmail", days_limit: int = 2) -> list[dict]:
+    print(f"🔄 Connecting to Gmail to fetch resumes (last {days_limit} days)...")
     os.makedirs(download_dir, exist_ok=True)
     allowed_ext = (".pdf", ".doc", ".docx")
     downloaded = []
@@ -65,6 +66,7 @@ def fetch_from_gmail(state: dict, download_dir: str = "resumes/gmail", limit: in
         print("❌ Gmail credentials not found in environment variables.")
         return {**state, "resumes": []}
 
+    print("🔄 Initiating Gmail resume fetch process...")
     downloaded = fetch_resumes_from_gmail(user_email, app_password, download_dir, days_limit)
 
     if limit and len(downloaded) > limit:

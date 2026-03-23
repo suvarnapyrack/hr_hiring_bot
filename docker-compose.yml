@@ -17,7 +17,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hr_bot_db"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 3
 
   hr_hiring_bot:
     build: .
@@ -37,6 +37,7 @@ services:
       - 8.8.4.4
     volumes:
       - .:/app
+      - ./chroma_db:/app/chroma_db
     depends_on:
       db:
         condition: service_healthy
@@ -54,6 +55,7 @@ services:
       - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/hr_bot_db
     volumes:
       - .:/app
+      - ./chroma_db:/app/chroma_db
     depends_on:
       db:
         condition: service_healthy
